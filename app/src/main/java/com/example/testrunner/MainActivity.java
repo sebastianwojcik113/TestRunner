@@ -8,9 +8,11 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import java.util.concurrent.TimeUnit;
+
 public class MainActivity extends AppCompatActivity {
-    private TRServerManager serverManager;
     private static final int PORT = 5557;
+    private MessageSender messageSender;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -22,8 +24,12 @@ public class MainActivity extends AppCompatActivity {
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
             return insets;
         });
-        serverManager = new TRServerManager(PORT);
-        serverManager.startServer();
+        TRServerSocket serverSocket = new TRServerSocket(PORT, getApplicationContext());
+        serverSocket.start();
+//        serverManager = new TRServerManager(PORT);
+//        serverManager.startServer();
+
+
 
     }
 }
