@@ -1,6 +1,7 @@
 package com.example.testrunner;
 
 import android.content.Context;
+import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
 import android.util.Log;
 
@@ -22,27 +23,11 @@ public class CommandHandler {
     public void handleCommand(String commandToHandle){
         //Example:  "Command: WIFI_ADD_NETWORK, SSID: AP1, SEC_TYPE: WPA2, PWD: 12345678"
 
-        // Split command parameters by comma and remove whitespaces
-        String[] parameters = commandToHandle.trim().split("\\s*,\\s*");
-        System.out.println("Parameters array: " + Arrays.toString(parameters));
-        //Create Map to store command parameters in key-value way
-        Map<String, String> commandParameters = new HashMap<>();
-
-        //Add parameters to the map
-        for(String parameter : parameters){
-            //Split key-value by colon and remove whitespaces
-            String[] keyValue = parameter.trim().split("\\s*:\\s*");
-            System.out.println("KeyValue array: " + "\"" + Arrays.toString(keyValue) + "\"");
-            if (keyValue.length == 2){
-                commandParameters.put(keyValue[0], keyValue[1]);
-            } else {
-                Log.e(LOGTAG, "Incorrect value of " + keyValue[0] + "parameter: " + keyValue[1]);
-            }
-
-        }
-        System.out.println("Command after extraction: \"" + commandParameters.get("Command") + "\"");
+        Map<String, String> commandParametersMap;
+        commandParametersMap = parseCommand(commandToHandle);
+        System.out.println("Command after extraction: \"" + commandParametersMap.get("Command") + "\"");
         //Check command type and hrun specific action
-        switch(Objects.requireNonNull(commandParameters.get("Command"))){
+        switch(Objects.requireNonNull(commandParametersMap.get("Command"))){
             case "ENABLE_WIFI":
                 enableWifi();
                 break;
@@ -63,8 +48,35 @@ public class CommandHandler {
         }
     }
 
-    private void wifiAddNetwork() {
+    //Method to parse command String and place the parameters inside HashMap
+    private Map<String, String> parseCommand(String commandToHandle) {
+        // Split command parameters by comma and remove whitespaces
+        String[] parameters = commandToHandle.trim().split("\\s*,\\s*");
+        System.out.println("Parameters array: " + Arrays.toString(parameters));
+        //Create Map to store command parameters in key-value way
+        Map<String, String> commandParameters = new HashMap<>();
 
+        //Add parameters to the map
+        for(String parameter : parameters){
+            //Split key-value by colon and remove whitespaces
+            String[] keyValue = parameter.trim().split("\\s*:\\s*");
+            System.out.println("KeyValue array: " + "\"" + Arrays.toString(keyValue) + "\"");
+            if (keyValue.length == 2){
+                commandParameters.put(keyValue[0], keyValue[1]);
+            } else {
+                Log.e(LOGTAG, "Incorrect value of " + keyValue[0] + "parameter: " + keyValue[1]);
+            }
+
+        }
+        return commandParameters;
+    }
+
+    private void wifiAddNetwork() {
+        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+//        WifiConfiguration wifiConfig;
+//        wifiConfig.SSID
+//
+//        wifiManager.addNetworkPrivileged(wifiConfig)
     }
 
     private void closeClientConnection() {
