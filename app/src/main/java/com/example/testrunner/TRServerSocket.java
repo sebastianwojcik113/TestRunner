@@ -52,19 +52,6 @@ public class TRServerSocket extends Thread{
                 Log.d(LOGTAG, "Started separate Thread for commandReceiver with ID: " + commandReceiver.getId());
                 messageSender.start();
                 Log.d(LOGTAG, "Started separate Thread for messageSender with ID: " + messageSender.getId());
-
-                //Test for loop to send client messages, will be deleted later
-                new Thread(()-> {
-                    for (int i = 0; i < 5; i++) {
-                        try {
-                            TimeUnit.SECONDS.sleep(1);
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-                        sendMessage("Test message to client: " + i);
-
-                    }
-                }).start();
             }
         } catch (IOException e) {
             e.printStackTrace();

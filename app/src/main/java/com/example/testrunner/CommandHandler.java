@@ -1,12 +1,18 @@
 package com.example.testrunner;
 
+import android.Manifest;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
 import android.util.Log;
 
+import androidx.annotation.RequiresPermission;
+import androidx.core.app.ActivityCompat;
+
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -14,6 +20,7 @@ public class CommandHandler {
     private static final String LOGTAG = "TestRunnerCommandHandler";
     private static Context context;
     private TRServerSocket serverSocket;
+    private WifiManager wifiManager;
     //Construktor
     public CommandHandler(Context context, TRServerSocket serverSocket){
         this.context = context;
@@ -38,14 +45,40 @@ public class CommandHandler {
                 closeClientConnection();
                 break;
             case "WIFI_ADD_NETWORK":
-                wifiAddNetwork();
-
+                wifiConnectSsid(commandParametersMap);
                 break;
+//            case "CONNECT_SSID":
+//                wifiConnectSsid(commandParametersMap);
+//                break;
             default:
                 Log.e(LOGTAG, "Received unknown command: " + commandToHandle);
 
 
         }
+    }
+    //TODO Sprawdzic czy rozdzielenie akcji addProfile i Connect jest w ogole potrzebne
+    @RequiresPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+    private void wifiConnectSsid_copy(Map<String, String> commandParametersMap) {
+        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        String ssid = commandParametersMap.get("SSID");
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return;
+        }
+        List<WifiConfiguration> configuredNetworks = wifiManager.getConfiguredNetworks();
+        Log.d(LOGTAG, configuredNetworks.toString());
+        //TODO Dodać usuwanie wszystkich sieci wifi na poczatku uruchamiania apki lub przy wywołaniu wifiConnectSsid
+
+
+//        wifiManager.disconnect();
+//        wifiManager.enableNetwork(netId, true);
+//        wifiManager.reconnect();
     }
 
     //Method to parse command String and place the parameters inside HashMap
@@ -71,12 +104,43 @@ public class CommandHandler {
         return commandParameters;
     }
 
-    private void wifiAddNetwork() {
+    private void wifiConnectSsid(Map<String, String> commandParametersMap) {
         WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-//        WifiConfiguration wifiConfig;
-//        wifiConfig.SSID
+        WifiConfiguration wifiConfig = new WifiConfiguration();
+        boolean ssidProvided = false;
+
+        if (commandParametersMap.get("SSID") == null){
+            Log.e(LOGTAG, "Command ADD_NETWORK does not contain any network name(SSID)");
+            ssidProvided = false;
+        } else {
+            wifiConfig.SSID = "\"" + commandParametersMap.get("SSID") + "\"";
+            ssidProvided = true;
+            Log.d(LOGTAG, "SSID provided for WIFI_ADD_NETWORK command. Proceeding with adding the network");
+        }
+
+
+        //TODO Napisac logikę sprawdzania czy wszystkie wymagane parametry zostały podane, np: w przypadku security type WPA2 musi być haslo
+//        wifiConfig.preSharedKey = "7MCE7KPN";
+//        if (ssidProvided){
+//            if (!commandParametersMap.get("SEC_TYPE").equalsIgnoreCase("open")){
 //
-//        wifiManager.addNetworkPrivileged(wifiConfig)
+//            }
+//        }
+
+        //TODO dodać obslugę próby dopisania sieci przy wyłączonym wifi, pewnie if wifiManager == null
+        int netId = wifiManager.addNetwork(wifiConfig);
+        System.out.println("netID: " + netId);
+        if (netId < 0){
+            Log.e(LOGTAG, "Unable to add Wi-Fi network profile. Configuration may be incorrect.");
+            serverSocket.sendMessage("Unable to add network profile: " + commandParametersMap.get("SSID") + " Configuration may be incorrect.");
+        } else {
+            Log.d(LOGTAG, "Network profile successfully added: " + commandParametersMap.get("SSID"));
+        }
+        wifiManager.disconnect();
+        if (wifiManager.enableNetwork(netId, true)) {
+            Log.d(LOGTAG, "Network " + commandParametersMap.get("SSID") + " enabled.");
+
+        }
     }
 
     private void closeClientConnection() {
@@ -88,6 +152,7 @@ public class CommandHandler {
         if(wifiManager != null) {
             wifiManager.setWifiEnabled(false);
             Log.d(LOGTAG, "Calling action to disable WiFi");
+            serverSocket.sendMessage("Wi-Fi disabled successfully");
         }
     }
 
@@ -97,6 +162,7 @@ public class CommandHandler {
         if(wifiManager != null) {
             wifiManager.setWifiEnabled(true);
             Log.d(LOGTAG, "Calling action to enable WiFi");
+            serverSocket.sendMessage("Wi-Fi enabled successfully");
         }
     }
 }
