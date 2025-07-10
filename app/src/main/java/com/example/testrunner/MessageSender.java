@@ -12,6 +12,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 public class MessageSender extends Thread{
     private static final String LOGTAG = "TestRunnerClientHandler";
+    private static final String SERVERTOCLIENT = "[<--] ";
     private PrintWriter outputMessageStream;
     private boolean isRunning = true;
     private final BlockingQueue<String> messageQueue = new LinkedBlockingQueue<>();
@@ -38,8 +39,8 @@ public class MessageSender extends Thread{
     }
 
     public void sendToClient(String msg){
-        messageQueue.offer(msg);
-        Log.d(LOGTAG, "Output message added to queue: " + msg);
+        messageQueue.offer(SERVERTOCLIENT + msg);
+        Log.d(LOGTAG, "Output message added to queue: " + SERVERTOCLIENT + msg);
     }
 
     public void shutdown() {

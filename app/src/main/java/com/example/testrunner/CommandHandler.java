@@ -4,17 +4,22 @@ import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.util.Log;
 
 import androidx.annotation.RequiresPermission;
 import androidx.core.app.ActivityCompat;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 public class CommandHandler {
     private static final String LOGTAG = "TestRunnerCommandHandler";
@@ -27,34 +32,42 @@ public class CommandHandler {
         this.serverSocket = serverSocket;
     }
 
-    public void handleCommand(String commandToHandle){
-        //Example:  "Command: WIFI_ADD_NETWORK, SSID: AP1, SEC_TYPE: WPA2, PWD: 12345678"
+    public void handleCommand(String jsonCommandToHandle){
+        //Example: "{\"Command_ID\":42, \"Command\":\"WIFI_ADD_NETWORK\", \"SSID\":\"AP1\", \"SECURITY_TYPE\":\"WPA2\", \"PWD\":\"12345678\"}"
 
-        Map<String, String> commandParametersMap;
-        commandParametersMap = parseCommand(commandToHandle);
-        System.out.println("Command after extraction: \"" + commandParametersMap.get("Command") + "\"");
-        //Check command type and hrun specific action
-        switch(Objects.requireNonNull(commandParametersMap.get("Command"))){
-            case "ENABLE_WIFI":
-                enableWifi();
-                break;
-            case "DISABLE_WIFI":
-                disableWifi();
-                break;
-            case "CLOSE_CONNECTION":
-                closeClientConnection();
-                break;
-            case "WIFI_ADD_NETWORK":
-                wifiConnectSsid(commandParametersMap);
-                break;
+        try {
+            JSONObject commandObj = new JSONObject(jsonCommandToHandle);
+            String commandToHandle = commandObj.getString("Command");
+            System.out.println("Command after extraction: \"" + commandObj.getString("Command") + "\"");
+            //Check command type and hrun specific action
+            switch(commandToHandle){
+                case "ENABLE_WIFI":
+                    enableWifi();
+                    break;
+                case "DISABLE_WIFI":
+                    disableWifi();
+                    break;
+                case "CLOSE_CONNECTION":
+                    closeClientConnection();
+                    break;
+                case "WIFI_ADD_NETWORK":
+                    wifiConnectSsid(commandObj);
+                    break;
 //            case "CONNECT_SSID":
 //                wifiConnectSsid(commandParametersMap);
 //                break;
-            default:
-                Log.e(LOGTAG, "Received unknown command: " + commandToHandle);
+                default:
+                    Log.e(LOGTAG, "Received unknown command: " + commandToHandle);
 
 
+            }
+
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
         }
+
+
+
     }
     //TODO Sprawdzic czy rozdzielenie akcji addProfile i Connect jest w ogole potrzebne
     @RequiresPermission(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -82,40 +95,71 @@ public class CommandHandler {
     }
 
     //Method to parse command String and place the parameters inside HashMap
-    private Map<String, String> parseCommand(String commandToHandle) {
-        // Split command parameters by comma and remove whitespaces
-        String[] parameters = commandToHandle.trim().split("\\s*,\\s*");
-        System.out.println("Parameters array: " + Arrays.toString(parameters));
-        //Create Map to store command parameters in key-value way
-        Map<String, String> commandParameters = new HashMap<>();
+//    private Map<String, String> parseCommand(JSONObject jsonObj) {
+//        // Split command parameters by comma and remove whitespaces
+//        String[] parameters = commandToHandle.trim().split("\\s*,\\s*");
+//        System.out.println("Parameters array: " + Arrays.toString(parameters));
+//        //Create Map to store command parameters in key-value way
+//        Map<String, String> commandParameters = new HashMap<>();
+//
+//        //Add parameters to the map
+//        for(String parameter : parameters){
+//            //Split key-value by colon and remove whitespaces
+//            String[] keyValue = parameter.trim().split("\\s*:\\s*");
+//            System.out.println("KeyValue array: " + "\"" + Arrays.toString(keyValue) + "\"");
+//            if (keyValue.length == 2){
+//                commandParameters.put(keyValue[0], keyValue[1]);
+//            } else {
+//                Log.e(LOGTAG, "Incorrect value of " + keyValue[0] + "parameter: " + keyValue[1]);
+//            }
+//
+//        }
+//        return commandParameters;
+//    }
 
-        //Add parameters to the map
-        for(String parameter : parameters){
-            //Split key-value by colon and remove whitespaces
-            String[] keyValue = parameter.trim().split("\\s*:\\s*");
-            System.out.println("KeyValue array: " + "\"" + Arrays.toString(keyValue) + "\"");
-            if (keyValue.length == 2){
-                commandParameters.put(keyValue[0], keyValue[1]);
-            } else {
-                Log.e(LOGTAG, "Incorrect value of " + keyValue[0] + "parameter: " + keyValue[1]);
-            }
-
-        }
-        return commandParameters;
-    }
-
-    private void wifiConnectSsid(Map<String, String> commandParametersMap) {
+    private void wifiConnectSsid(JSONObject jsonCommand) {
         WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         WifiConfiguration wifiConfig = new WifiConfiguration();
-        boolean ssidProvided = false;
 
-        if (commandParametersMap.get("SSID") == null){
-            Log.e(LOGTAG, "Command ADD_NETWORK does not contain any network name(SSID)");
-            ssidProvided = false;
-        } else {
-            wifiConfig.SSID = "\"" + commandParametersMap.get("SSID") + "\"";
-            ssidProvided = true;
-            Log.d(LOGTAG, "SSID provided for WIFI_ADD_NETWORK command. Proceeding with adding the network");
+        try {
+            if (!jsonCommand.has("SSID")){
+                Log.e(LOGTAG, "Command ADD_NETWORK does not contain any network name(SSID)");
+            } else {
+                wifiConfig.SSID = "\"" + jsonCommand.getString("SSID") + "\"";
+                Log.d(LOGTAG, "SSID provided for WIFI_ADD_NETWORK command. Proceeding with adding the network");
+            }
+
+            int netId = wifiManager.addNetwork(wifiConfig);
+            System.out.println("netID: " + netId);
+            if (netId < 0){
+                Log.e(LOGTAG, "Unable to add Wi-Fi network profile. Configuration may be incorrect.");
+                serverSocket.sendMessage("Unable to add network profile: " + jsonCommand.getString("SSID") + " Configuration may be incorrect.");
+            } else {
+                Log.d(LOGTAG, "Network profile successfully added: " + jsonCommand.getString("SSID"));
+                serverSocket.sendMessage("Network profile successfully added: " + jsonCommand.getString("SSID"));
+                WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+                String connectedSSID = "<unknown ssid>";
+                while(connectedSSID.equalsIgnoreCase("<unknown ssid>")) {
+                    connectedSSID = wifiInfo.getSSID();
+                }
+                serverSocket.sendMessage("Connected to SSID: " + wifiInfo.getSSID());
+
+
+                try {
+                    TimeUnit.SECONDS.sleep(3);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                serverSocket.sendMessage("Connected to SSID after wait 3 seconds: " + wifiInfo.getSSID());
+
+            }
+            //wifiManager.disconnect();
+            if (wifiManager.enableNetwork(netId, true)) {
+                Log.d(LOGTAG, "Network " + jsonCommand.getString("SSID") + " enabled.");
+                // wifiManager.get
+            }
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
         }
 
 
@@ -128,19 +172,7 @@ public class CommandHandler {
 //        }
 
         //TODO dodać obslugę próby dopisania sieci przy wyłączonym wifi, pewnie if wifiManager == null
-        int netId = wifiManager.addNetwork(wifiConfig);
-        System.out.println("netID: " + netId);
-        if (netId < 0){
-            Log.e(LOGTAG, "Unable to add Wi-Fi network profile. Configuration may be incorrect.");
-            serverSocket.sendMessage("Unable to add network profile: " + commandParametersMap.get("SSID") + " Configuration may be incorrect.");
-        } else {
-            Log.d(LOGTAG, "Network profile successfully added: " + commandParametersMap.get("SSID"));
-        }
-        wifiManager.disconnect();
-        if (wifiManager.enableNetwork(netId, true)) {
-            Log.d(LOGTAG, "Network " + commandParametersMap.get("SSID") + " enabled.");
 
-        }
     }
 
     private void closeClientConnection() {

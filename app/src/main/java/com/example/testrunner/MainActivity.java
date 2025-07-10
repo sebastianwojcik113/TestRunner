@@ -26,10 +26,5 @@ public class MainActivity extends AppCompatActivity {
         });
         TRServerSocket serverSocket = new TRServerSocket(PORT, getApplicationContext());
         serverSocket.start();
-//        serverManager = new TRServerManager(PORT);
-//        serverManager.startServer();
-
-
-
     }
 }
