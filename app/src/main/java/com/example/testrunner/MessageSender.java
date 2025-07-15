@@ -2,17 +2,15 @@ package com.example.testrunner;
 
 import android.util.Log;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.PrintWriter;
-import java.net.Socket;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 public class MessageSender extends Thread{
     private static final String LOGTAG = "TestRunnerClientHandler";
-    private static final String SERVERTOCLIENT = "[<--] ";
     private PrintWriter outputMessageStream;
     private boolean isRunning = true;
     private final BlockingQueue<String> messageQueue = new LinkedBlockingQueue<>();
@@ -38,10 +36,31 @@ public class MessageSender extends Thread{
             }
     }
 
-    public void sendToClient(String msg){
-        messageQueue.offer(SERVERTOCLIENT + msg);
-        Log.d(LOGTAG, "Output message added to queue: " + SERVERTOCLIENT + msg);
+    public void sendMsgToClient(String msg){
+        try {
+            JSONObject jsonMessage = new JSONObject();
+            jsonMessage.put("Message", msg);
+            messageQueue.offer(jsonMessage.toString());
+            Log.d(LOGTAG, "Output message added to queue: " + jsonMessage);
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
+        }
     }
+    public void sendAckToClient(int commandId, String result, String msg){
+        try {
+            JSONObject jsonMessage = new JSONObject();
+            jsonMessage.put("Ack_ID", commandId);
+            jsonMessage.put("Result", result);
+            jsonMessage.put("Message", msg);
+            messageQueue.offer(jsonMessage.toString());
+            Log.d(LOGTAG, "Output message added to queue: " + jsonMessage);
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+
+    //TODO Przemyslec jak zaimplementowac ACK zmapowane z Command_ID i czy potrzebne?
 
     public void shutdown() {
         isRunning = false;

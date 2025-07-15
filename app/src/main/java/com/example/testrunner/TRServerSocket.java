@@ -9,7 +9,6 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.concurrent.TimeUnit;
 
 public class TRServerSocket extends Thread{
     private static final String LOGTAG = "TestRunnerServerSocket";
@@ -78,7 +77,12 @@ public class TRServerSocket extends Thread{
     //Test method to check sending messages to client, will be deleted
     public void sendMessage(String msg){
         if(messageSender != null){
-            messageSender.sendToClient(msg);
+            messageSender.sendMsgToClient(msg);
+        }
+    }
+    public void sendAck(int commandId, String result, String msg){
+        if(messageSender != null){
+            messageSender.sendAckToClient(commandId, result, msg);
         }
     }
 }

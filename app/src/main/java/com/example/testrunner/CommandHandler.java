@@ -14,15 +14,14 @@ import androidx.core.app.ActivityCompat;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 public class CommandHandler {
     private static final String LOGTAG = "TestRunnerCommandHandler";
+    private static final String ERROR_RESULT = "ERROR";
+    private static final String COMPLETE_RESULT = "COMPLETE";
     private static Context context;
     private TRServerSocket serverSocket;
     private WifiManager wifiManager;
@@ -39,13 +38,14 @@ public class CommandHandler {
             JSONObject commandObj = new JSONObject(jsonCommandToHandle);
             String commandToHandle = commandObj.getString("Command");
             System.out.println("Command after extraction: \"" + commandObj.getString("Command") + "\"");
-            //Check command type and hrun specific action
+            int commandID = commandObj.getInt("Command_ID");
+            //Check command type and run specific action
             switch(commandToHandle){
                 case "ENABLE_WIFI":
-                    enableWifi();
+                    enableWifi(commandID);
                     break;
                 case "DISABLE_WIFI":
-                    disableWifi();
+                    disableWifi(commandID);
                     break;
                 case "CLOSE_CONNECTION":
                     closeClientConnection();
@@ -120,31 +120,33 @@ public class CommandHandler {
     private void wifiConnectSsid(JSONObject jsonCommand) {
         WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         WifiConfiguration wifiConfig = new WifiConfiguration();
-
         try {
+            // Check if command contain SSID at all
             if (!jsonCommand.has("SSID")){
                 Log.e(LOGTAG, "Command ADD_NETWORK does not contain any network name(SSID)");
             } else {
+                // Add SSID to the wificonfig
                 wifiConfig.SSID = "\"" + jsonCommand.getString("SSID") + "\"";
                 Log.d(LOGTAG, "SSID provided for WIFI_ADD_NETWORK command. Proceeding with adding the network");
             }
 
             int netId = wifiManager.addNetwork(wifiConfig);
-            System.out.println("netID: " + netId);
+            System.out.println("netID assigned after addNetwork to the wificonfig: " + netId);
             if (netId < 0){
+                //Check if addNetwork succeded, netId should be highher than -1
                 Log.e(LOGTAG, "Unable to add Wi-Fi network profile. Configuration may be incorrect.");
                 serverSocket.sendMessage("Unable to add network profile: " + jsonCommand.getString("SSID") + " Configuration may be incorrect.");
             } else {
                 Log.d(LOGTAG, "Network profile successfully added: " + jsonCommand.getString("SSID"));
                 serverSocket.sendMessage("Network profile successfully added: " + jsonCommand.getString("SSID"));
                 WifiInfo wifiInfo = wifiManager.getConnectionInfo();
-                String connectedSSID = "<unknown ssid>";
-                while(connectedSSID.equalsIgnoreCase("<unknown ssid>")) {
-                    connectedSSID = wifiInfo.getSSID();
-                }
+//                //Uncomment when testing with real DUT, not emulator as emulator seems to return always "<unknown ssid>"
+//                String connectedSSID = "<unknown ssid>";
+//                while(connectedSSID.equalsIgnoreCase("<unknown ssid>")) {
+//                    connectedSSID = wifiInfo.getSSID();
+//                }
+                //TODO Sprawdzic na realnym urzadzeniu czy getSSID() zwróci SSID
                 serverSocket.sendMessage("Connected to SSID: " + wifiInfo.getSSID());
-
-
                 try {
                     TimeUnit.SECONDS.sleep(3);
                 } catch (InterruptedException e) {
@@ -171,7 +173,7 @@ public class CommandHandler {
 //            }
 //        }
 
-        //TODO dodać obslugę próby dopisania sieci przy wyłączonym wifi, pewnie if wifiManager == null
+        //TODO dodać obslugę próby dopisania sieci przy wyłączonym wifi, if wifiManager == null?
 
     }
 
@@ -179,22 +181,33 @@ public class CommandHandler {
         serverSocket.shutdown();
     }
 
-    private void disableWifi() {
+    private void disableWifi(int commandID) {
         WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         if(wifiManager != null) {
             wifiManager.setWifiEnabled(false);
             Log.d(LOGTAG, "Calling action to disable WiFi");
             serverSocket.sendMessage("Wi-Fi disabled successfully");
+            serverSocket.sendAck(commandID, COMPLETE_RESULT, "Wi-FI status: " + wifiManager.getWifiState());
+        } else {
+            Log.e(LOGTAG, "WifiManager is null! Cannot disable Wi-Fi. Possible reasons: context problem or device doesn't support Wi-Fi.");
+            serverSocket.sendMessage("Error: Wi-Fi manager unavailable. Please check device capabilities or app permissions.");
+            serverSocket.sendAck(commandID, ERROR_RESULT, "Wi-Fi manager is null!");
         }
     }
 
-    private void enableWifi() {
+    private void enableWifi(int commandID) {
         WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-        Log.d(LOGTAG, "Current WifiManager: " + wifiManager.getWifiState());
+
         if(wifiManager != null) {
+            Log.d(LOGTAG, "Current Wi-Fi state: " + wifiManager.getWifiState());
             wifiManager.setWifiEnabled(true);
             Log.d(LOGTAG, "Calling action to enable WiFi");
             serverSocket.sendMessage("Wi-Fi enabled successfully");
+            serverSocket.sendAck(commandID, COMPLETE_RESULT, "Wi-FI status: " + wifiManager.getWifiState());
+        } else {
+            Log.e(LOGTAG, "WifiManager is null! Cannot enable Wi-Fi. Possible reasons: context problem or device doesn't support Wi-Fi.");
+            serverSocket.sendMessage("Error: Wi-Fi manager unavailable. Please check device capabilities or app permissions.");
+            serverSocket.sendAck(commandID, ERROR_RESULT, "Wi-Fi manager is null!");
         }
     }
 }

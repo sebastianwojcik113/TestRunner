@@ -40,7 +40,7 @@ public class CommandReceiver extends Thread{
 //            handler.start();
 //            System.out.println(handler.getId());
 //            String example = "Example message";
-//            handler.sendToClient(example);
+//            handler.sendMsgToClient(example);
 
     }
 
