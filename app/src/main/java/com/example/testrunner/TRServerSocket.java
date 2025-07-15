@@ -74,15 +74,34 @@ public class TRServerSocket extends Thread{
             Log.d(LOGTAG, "Error occurred when trying to close client connection: " + e.getMessage());
         }
     }
-    //Test method to check sending messages to client, will be deleted
+    /**
+     * Trying to call sendMsgToClient() from MessageSender class.
+     *
+     * @param msg string message to send
+     * @throws IllegalStateException when messageSender object is null
+     */
     public void sendMessage(String msg){
         if(messageSender != null){
             messageSender.sendMsgToClient(msg);
+        } else {
+            Log.e(LOGTAG, "Unable to send message, messageSender is null");
+            throw new IllegalStateException();
         }
     }
+    /**
+     * Trying to call sendAckToClient() from MessageSender class.
+     *
+     * @param commandId ID of answered command
+     * @param result result of action called by command with commandId
+     * @param msg string message to send
+     * @throws IllegalStateException when messageSender object is null
+     */
     public void sendAck(int commandId, String result, String msg){
         if(messageSender != null){
             messageSender.sendAckToClient(commandId, result, msg);
+        } else {
+            Log.e(LOGTAG, "Unable to send message, messageSender is null");
+            throw new IllegalStateException();
         }
     }
 }

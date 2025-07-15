@@ -35,7 +35,13 @@ public class MessageSender extends Thread{
 
             }
     }
-
+    /**
+     * Sends message to client. Message msg is added to JSON format object
+     * to follow the constant communication format, but sent as a String
+     *
+     * @param msg string message to send
+     * @throws RuntimeException
+     */
     public void sendMsgToClient(String msg){
         try {
             JSONObject jsonMessage = new JSONObject();
@@ -46,6 +52,15 @@ public class MessageSender extends Thread{
             throw new RuntimeException(e);
         }
     }
+    /**
+     * Add ack message to messageQueue. Message contains commandId, result and additional message.
+     * All parameters are added to JSON format object to follow the constant communication format, but sent as a String
+     *
+     * @param commandId ID of answered command
+     * @param result result of action called by command with commandId
+     * @param msg string message to send
+     * @throws RuntimeException
+     */
     public void sendAckToClient(int commandId, String result, String msg){
         try {
             JSONObject jsonMessage = new JSONObject();
