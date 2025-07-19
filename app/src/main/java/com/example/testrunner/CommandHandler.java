@@ -1,7 +1,9 @@
 package com.example.testrunner;
 
 import android.Manifest;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
@@ -14,6 +16,9 @@ import androidx.core.app.ActivityCompat;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.Dictionary;
+import java.util.HashMap;
+import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -22,6 +27,7 @@ public class CommandHandler {
     private static final String LOGTAG = "TestRunnerCommandHandler";
     private static final String ERROR_RESULT = "ERROR";
     private static final String COMPLETE_RESULT = "COMPLETE";
+
     private static Context context;
     private TRServerSocket serverSocket;
     private WifiManager wifiManager;
@@ -124,41 +130,43 @@ public class CommandHandler {
             // Check if command contain SSID at all
             if (!jsonCommand.has("SSID")){
                 Log.e(LOGTAG, "Command ADD_NETWORK does not contain any network name(SSID)");
+                serverSocket.sendAck(Integer.parseInt(jsonCommand.getString("Command_ID")), ERROR_RESULT, "Command " + jsonCommand.getString("Command") + " requires SSID name provided!");
             } else {
                 // Add SSID to the wificonfig
                 wifiConfig.SSID = "\"" + jsonCommand.getString("SSID") + "\"";
                 Log.d(LOGTAG, "SSID provided for WIFI_ADD_NETWORK command. Proceeding with adding the network");
-            }
+                serverSocket.sendMessage("SSID provided for WIFI_ADD_NETWORK command. Proceeding with adding the network");
 
-            int netId = wifiManager.addNetwork(wifiConfig);
-            System.out.println("netID assigned after addNetwork to the wificonfig: " + netId);
-            if (netId < 0){
-                //Check if addNetwork succeded, netId should be highher than -1
-                Log.e(LOGTAG, "Unable to add Wi-Fi network profile. Configuration may be incorrect.");
-                serverSocket.sendMessage("Unable to add network profile: " + jsonCommand.getString("SSID") + " Configuration may be incorrect.");
-            } else {
-                Log.d(LOGTAG, "Network profile successfully added: " + jsonCommand.getString("SSID"));
-                serverSocket.sendMessage("Network profile successfully added: " + jsonCommand.getString("SSID"));
-                WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+                int netId = wifiManager.addNetwork(wifiConfig);
+                System.out.println("netID assigned after addNetwork to the wificonfig: " + netId);
+                if (netId < 0){
+                    //Check if addNetwork succeded, netId should be highher than -1
+                    Log.e(LOGTAG, "Unable to add Wi-Fi network profile. Configuration may be incorrect.");
+                    serverSocket.sendMessage("Unable to add network profile: " + jsonCommand.getString("SSID") + " Configuration may be incorrect.");
+                } else {
+                    Log.d(LOGTAG, "Network profile successfully added: " + jsonCommand.getString("SSID"));
+                    serverSocket.sendMessage("Network profile successfully added: " + jsonCommand.getString("SSID"));
+                    WifiInfo wifiInfo = wifiManager.getConnectionInfo();
 //                //Uncomment when testing with real DUT, not emulator as emulator seems to return always "<unknown ssid>"
 //                String connectedSSID = "<unknown ssid>";
 //                while(connectedSSID.equalsIgnoreCase("<unknown ssid>")) {
 //                    connectedSSID = wifiInfo.getSSID();
 //                }
-                //TODO Sprawdzic na realnym urzadzeniu czy getSSID() zwróci SSID
-                serverSocket.sendMessage("Connected to SSID: " + wifiInfo.getSSID());
-                try {
-                    TimeUnit.SECONDS.sleep(3);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
+                    //TODO Sprawdzic na realnym urzadzeniu czy getSSID() zwróci SSID
+                    serverSocket.sendMessage("Connected to SSID: " + wifiInfo.getSSID());
+                    try {
+                        TimeUnit.SECONDS.sleep(3);
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                    serverSocket.sendMessage("Connected to SSID after wait 3 seconds: " + wifiInfo.getSSID());
                 }
-                serverSocket.sendMessage("Connected to SSID after wait 3 seconds: " + wifiInfo.getSSID());
 
-            }
-            //wifiManager.disconnect();
-            if (wifiManager.enableNetwork(netId, true)) {
-                Log.d(LOGTAG, "Network " + jsonCommand.getString("SSID") + " enabled.");
-                // wifiManager.get
+                //wifiManager.disconnect();
+                if (wifiManager.enableNetwork(netId, true)) {
+                    Log.d(LOGTAG, "Network " + jsonCommand.getString("SSID") + " enabled.");
+                    // wifiManager.get
+                }
             }
         } catch (JSONException e) {
             throw new RuntimeException(e);
@@ -197,17 +205,68 @@ public class CommandHandler {
 
     private void enableWifi(int commandID) {
         WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+        int timeout = 5000;
 
         if(wifiManager != null) {
             Log.d(LOGTAG, "Current Wi-Fi state: " + wifiManager.getWifiState());
             wifiManager.setWifiEnabled(true);
-            Log.d(LOGTAG, "Calling action to enable WiFi");
-            serverSocket.sendMessage("Wi-Fi enabled successfully");
-            serverSocket.sendAck(commandID, COMPLETE_RESULT, "Wi-FI status: " + wifiManager.getWifiState());
+            if(waitForWifiStateChange(wifiManager.WIFI_STATE_ENABLED, timeout)){
+                //WIFI_STATE_DISABLED -> WIFI_STATE_ENABLING -> WIFI_STATE_ENABLED
+                //TODO Dodać logikę sprawdzającą czy wifi przeszło w stan WIFI_STATE_ENABLED -> BroadcastReceiver?
+                Log.d(LOGTAG, "Calling action to enable WiFi");
+                serverSocket.sendMessage("Wi-Fi enabled successfully");
+                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Wi-FI status: " + wifiManager.getWifiState());
+            }
         } else {
             Log.e(LOGTAG, "WifiManager is null! Cannot enable Wi-Fi. Possible reasons: context problem or device doesn't support Wi-Fi.");
             serverSocket.sendMessage("Error: Wi-Fi manager unavailable. Please check device capabilities or app permissions.");
             serverSocket.sendAck(commandID, ERROR_RESULT, "Wi-Fi manager is null!");
         }
     }
+    private String parseWifiState(WifiManager wifiManager){
+        HashMap<Integer, String> wifiStateMap = new  HashMap<Integer, String>();
+        wifiStateMap.put(0, "WIFI_STATE_DISABLING");
+        wifiStateMap.put(1, "WIFI_STATE_DISABLED");
+        wifiStateMap.put(2, "WIFI_STATE_ENABLING");
+        wifiStateMap.put(3, "WIFI_STATE_ENABLED");
+        wifiStateMap.put(4, "WIFI_STATE_UNKNOWN");
+        String wifiState = "";
+
+        if (wifiStateMap.containsKey(wifiManager.getWifiState())){
+            wifiState = wifiStateMap.get(wifiManager.getWifiState());
+        } else {
+            System.out.println("Unable to match Wi-Fi state key to value. Check if following Wi-Fi state is in HashMap: " + wifiManager.getWifiState());
+        }
+        return wifiState;
+    }
+    /**
+     * Checking the Wi-Fi state every checkingInterval time until it is changed to the
+     * expectedState or timeoutMilliseconds time elapsed
+     *
+     * @param expectedState expected Wi-Fi state
+     * @param timeoutMilliseconds timeout time
+     * @return true if expectedState is reached, false if timeout time elapsed
+     */
+    private boolean waitForWifiStateChange(int expectedState, int timeoutMilliseconds){
+        WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+        int elapsedTime = 0;
+        int checkingInterval = 100; //checking wifi state every 50ms
+
+        while(elapsedTime < timeoutMilliseconds){
+            int state = wifiManager.getWifiState();
+            System.out.println("Wi-Fi state: " + state);
+            if (state == expectedState){
+                return true;
+            }
+            elapsedTime += checkingInterval;
+            try {
+                Thread.sleep(checkingInterval);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        Log.d(LOGTAG, "Action waitForWifiStateChange timed out!");
+        return false;
+    }
+
 }
