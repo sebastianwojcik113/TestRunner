@@ -4,7 +4,6 @@ import android.util.Log;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.net.ServerSocket;
 
 public class CommandReceiver extends Thread{
     private static final String LOGTAG = "TestRunnerCommandReceiver";
