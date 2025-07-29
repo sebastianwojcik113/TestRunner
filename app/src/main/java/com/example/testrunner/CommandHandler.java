@@ -64,35 +64,12 @@ public class CommandHandler {
 
 
             }
-
         } catch (JSONException e) {
             throw new RuntimeException(e);
         }
     }
-
-    //TODO Sprawdzic czy rozdzielenie akcji addProfile i Connect jest w ogole potrzebne
-    @RequiresPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-    private void wifiConnectSsid_copy(Map<String, String> commandParametersMap) {
-        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-        String ssid = commandParametersMap.get("SSID");
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
-            return;
-        }
-        List<WifiConfiguration> configuredNetworks = wifiManager.getConfiguredNetworks();
-        Log.d(LOGTAG, configuredNetworks.toString());
-        //TODO Dodać usuwanie wszystkich sieci wifi na poczatku uruchamiania apki lub przy wywołaniu wifiConnectSsid
-
-    }
     private void addWifiNetworkConfig(JSONObject jsonCommand) {
         WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-
         try {
             int commandID = Integer.parseInt(jsonCommand.getString("Command_ID"));
             String ssid = jsonCommand.optString("SSID", null);
@@ -127,7 +104,6 @@ public class CommandHandler {
                         serverSocket.sendAck(commandID, ERROR_RESULT, "Unknown security type: " + securityType);
                         return;
                 }
-
                 int netId = wifiManager.addNetwork(wifiConfig);
                 System.out.println("netID assigned after addNetwork to the wificonfig: " + netId);
                 System.out.println("Connection info after addNetwork: " + wifiManager.getConnectionInfo());
@@ -145,8 +121,6 @@ public class CommandHandler {
             throw new RuntimeException(e);
         }
     }
-
-    //@RequiresPermission(allOf = {Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION})
     private void wifiConnect(JSONObject jsonCommand) {
         WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         try {
@@ -214,7 +188,6 @@ public class CommandHandler {
     private void closeClientConnection() {
         serverSocket.shutdown();
     }
-
     private void disableWifi(int commandID) {
         WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         if(wifiManager != null) {
@@ -228,7 +201,6 @@ public class CommandHandler {
             serverSocket.sendAck(commandID, ERROR_RESULT, "Wi-Fi manager is null!");
         }
     }
-
     private void enableWifi(int commandID) {
         WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
         int timeout = 5000;

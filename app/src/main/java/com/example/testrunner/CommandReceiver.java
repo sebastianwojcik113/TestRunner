@@ -15,7 +15,6 @@ public class CommandReceiver extends Thread{
         this.incomingCommand = incomingCommand;
         this.commandHandler = commandHandler;
     }
-
     public void shutdown(){
         isServerRunning = false;
     }
@@ -26,21 +25,10 @@ public class CommandReceiver extends Thread{
             while (isServerRunning && (receivedCommand = incomingCommand.readLine()) != null) {
                 Log.d(LOGTAG, "Command from client received: " + receivedCommand);
                 commandHandler.handleCommand(receivedCommand);
-
             }
-
         } catch (Exception e) {
             if (isServerRunning) e.printStackTrace();
         }
-
-//            // Create new instance of TRClientHandler to handle bidirectional communication with client in other Thread
-//            MessageSender handler = new MessageSender(socket);
-//            System.out.println(handler.getId());
-//            handler.start();
-//            System.out.println(handler.getId());
-//            String example = "Example message";
-//            handler.sendMsgToClient(example);
-
     }
 
 
