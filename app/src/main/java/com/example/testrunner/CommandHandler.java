@@ -1,6 +1,7 @@
 package com.example.testrunner;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -53,11 +54,11 @@ public class CommandHandler {
                     closeClientConnection();
                     break;
                 case "WIFI_ADD_NETWORK":
-                    wifiConnectSsid(commandObj);
+                    addWifiNetworkConfig(commandObj);
                     break;
-//            case "CONNECT_SSID":
-//                wifiConnectSsid(commandParametersMap);
-//                break;
+                case "WIFI_CONNECT":
+                    wifiConnect(commandObj);
+                    break;
                 default:
                     Log.e(LOGTAG, "Received unknown command: " + commandToHandle);
 
@@ -67,10 +68,8 @@ public class CommandHandler {
         } catch (JSONException e) {
             throw new RuntimeException(e);
         }
-
-
-
     }
+
     //TODO Sprawdzic czy rozdzielenie akcji addProfile i Connect jest w ogole potrzebne
     @RequiresPermission(Manifest.permission.ACCESS_FINE_LOCATION)
     private void wifiConnectSsid_copy(Map<String, String> commandParametersMap) {
@@ -90,54 +89,44 @@ public class CommandHandler {
         Log.d(LOGTAG, configuredNetworks.toString());
         //TODO Dodać usuwanie wszystkich sieci wifi na poczatku uruchamiania apki lub przy wywołaniu wifiConnectSsid
 
-
-//        wifiManager.disconnect();
-//        wifiManager.enableNetwork(netId, true);
-//        wifiManager.reconnect();
     }
-
-    //Method to parse command String and place the parameters inside HashMap
-//    private Map<String, String> parseCommand(JSONObject jsonObj) {
-//        // Split command parameters by comma and remove whitespaces
-//        String[] parameters = commandToHandle.trim().split("\\s*,\\s*");
-//        System.out.println("Parameters array: " + Arrays.toString(parameters));
-//        //Create Map to store command parameters in key-value way
-//        Map<String, String> commandParameters = new HashMap<>();
-//
-//        //Add parameters to the map
-//        for(String parameter : parameters){
-//            //Split key-value by colon and remove whitespaces
-//            String[] keyValue = parameter.trim().split("\\s*:\\s*");
-//            System.out.println("KeyValue array: " + "\"" + Arrays.toString(keyValue) + "\"");
-//            if (keyValue.length == 2){
-//                commandParameters.put(keyValue[0], keyValue[1]);
-//            } else {
-//                Log.e(LOGTAG, "Incorrect value of " + keyValue[0] + "parameter: " + keyValue[1]);
-//            }
-//
-//        }
-//        return commandParameters;
-//    }
-
-    private void wifiConnectSsid(JSONObject jsonCommand) {
+    private void addWifiNetworkConfig(JSONObject jsonCommand) {
         WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-        WifiConfiguration wifiConfig = new WifiConfiguration();
-        WifiInfo wifiInfo = null;
-        int commandID;
-        String ssid;
 
         try {
-            commandID = Integer.parseInt(jsonCommand.getString("Command_ID"));
+            int commandID = Integer.parseInt(jsonCommand.getString("Command_ID"));
+            String ssid = jsonCommand.optString("SSID", null);
+            String securityType = jsonCommand.optString("SECURITY_TYPE", "OPEN");
+            String password = jsonCommand.optString("PWD", null);
+
             // Check if command contain SSID at all
-            if (!jsonCommand.has("SSID")){
-                Log.e(LOGTAG, "Command ADD_NETWORK does not contain any network name(SSID)");
+            if (ssid == null){
+                Log.e(LOGTAG, "Command " + jsonCommand.getString("Command") + " does not contain any network name(SSID)");
                 serverSocket.sendAck(commandID, ERROR_RESULT, "Command " + jsonCommand.getString("Command") + " requires SSID name provided!");
             } else {
-                ssid = jsonCommand.getString("SSID");
                 // Add SSID to the wificonfig
+                WifiConfiguration wifiConfig = new WifiConfiguration();
                 wifiConfig.SSID = "\"" + ssid + "\"";
-                Log.d(LOGTAG, "SSID provided for WIFI_ADD_NETWORK command. Proceeding with adding the network");
-                serverSocket.sendMessage("SSID provided for WIFI_ADD_NETWORK command. Proceeding with adding the network");
+                Log.d(LOGTAG, "SSID provided for WIFI_ADD_NETWORK command. Proceeding with adding the network configuration");
+                serverSocket.sendMessage("SSID provided for WIFI_ADD_NETWORK command. Proceeding with adding the network configuration");
+                //Check security type
+                switch (securityType.toUpperCase()) {
+                    case "WPA":
+                    case "WPA2":
+                        if (password == null) {
+                            serverSocket.sendAck(commandID, ERROR_RESULT, "WPA/WPA2 secured network requires password to be provided!");
+                            return;
+                        }
+                        wifiConfig.preSharedKey = "\"" + password + "\"";
+
+                        break;
+                    case "OPEN":
+                        wifiConfig.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.NONE);
+                        break;
+                    default:
+                        serverSocket.sendAck(commandID, ERROR_RESULT, "Unknown security type: " + securityType);
+                        return;
+                }
 
                 int netId = wifiManager.addNetwork(wifiConfig);
                 System.out.println("netID assigned after addNetwork to the wificonfig: " + netId);
@@ -145,52 +134,83 @@ public class CommandHandler {
                 if (netId < 0){
                     //Check if addNetwork succeded, netId should be highher than -1
                     Log.e(LOGTAG, "Unable to add Wi-Fi network profile. Configuration may be incorrect.");
-                    serverSocket.sendAck(Integer.parseInt(jsonCommand.getString("Command_ID")), ERROR_RESULT, "Unable to add Wi-Fi network profile: " + jsonCommand.getString("SSID") + " Configuration may be incorrect.");
+                    serverSocket.sendAck(commandID, ERROR_RESULT, "Unable to add Wi-Fi network profile: " + ssid + " Configuration may be incorrect.");
                 } else {
-                    Log.d(LOGTAG, "Network profile successfully added: " + jsonCommand.getString("SSID"));
-                    serverSocket.sendMessage("Network profile successfully added: " + jsonCommand.getString("SSID"));
-                    wifiInfo = wifiManager.getConnectionInfo();
+                    Log.d(LOGTAG, "Network profile successfully added: " + ssid);
+                    serverSocket.sendAck(commandID, COMPLETE_RESULT, "Network profile successfully added: " + ssid);
                 }
-
-                //wifiManager.disconnect();
-                if (wifiManager.enableNetwork(netId, true)) {
-                    System.out.println("Connection info after enableNetwork: " + wifiManager.getConnectionInfo());
-                    Log.d(LOGTAG, "Network " + jsonCommand.getString("SSID") + " enabled.");
-                } else {
-                    System.out.println("Error when trying to enable network!");
-                    Log.d(LOGTAG, "Error when trying to enable network");
-                    serverSocket.sendMessage("Wi-Fi network " + ssid + "enabled");
-                }
-                if (isConnectedToSsid(ssid, 6000)){
-                    Log.d(LOGTAG, "Connected with network: " + ssid);
-                    serverSocket.sendAck(commandID, COMPLETE_RESULT, "Connected with network: " + ssid);
-                } else {
-                    Log.d(LOGTAG, "");
-                }
-
-
-                System.out.println(wifiInfo.getSupplicantState());
             }
+            //TODO dodać obslugę próby dopisania sieci przy wyłączonym wifi, if wifiManager == null?
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    //@RequiresPermission(allOf = {Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION})
+    private void wifiConnect(JSONObject jsonCommand) {
+        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        try {
+            int commandID = Integer.parseInt(jsonCommand.getString("Command_ID"));
+            String ssid = jsonCommand.optString("SSID", null);
+            // Check if command contain SSID at all
+            if (ssid == null){
+                Log.e(LOGTAG, "Command " + jsonCommand.getString("Command") + " does not contain any network name(SSID)");
+                serverSocket.sendAck(commandID, ERROR_RESULT, "Command " + jsonCommand.getString("Command") + " requires SSID name provided!");
+                return;
+            }
+            //Check if any configured networks found
+            @SuppressLint("MissingPermission") List<WifiConfiguration> configuredNetworks = wifiManager.getConfiguredNetworks();
+            if (configuredNetworks == null){
+                Log.e(LOGTAG, "No configured Wi-Fi networks found!");
+                serverSocket.sendAck(commandID, ERROR_RESULT, "No configured networks. Action " + jsonCommand.getString("Command") + " requires WIFI_ADD_NETWORK to be used before!");
+                return;
+            }
+            //Looking for netID of provided SSID
+            int netIDToConnect = -1;
+            for (WifiConfiguration wifiConfiguration : configuredNetworks){
+                if (wifiConfiguration.SSID != null){
+                    String configuredSsid = wifiConfiguration.SSID.replace("\"", "");
+                    System.out.println(wifiConfiguration);
+                    if (configuredSsid.equals(ssid)){
+                        netIDToConnect = wifiConfiguration.networkId;
+                        break;
+                    }
+                }
+            }
+            //Check if netID found, if not then netID would stay with value -1
+            if (netIDToConnect < 0){
+                Log.e(LOGTAG, "WifiConfiguration for SSID " + ssid + "not found!");
+                serverSocket.sendAck(commandID, ERROR_RESULT, "WifiConfiguration for SSID " + ssid + "not found!");
+                return;
+            }
+            wifiManager.disconnect();
+            //Try to enable network and connect
+            if (wifiManager.enableNetwork(netIDToConnect, true)) {
+                System.out.println("Connection info after enableNetwork: " + wifiManager.getConnectionInfo());
+                Log.d(LOGTAG, "Network " + ssid + " enabled.");
+            } else {
+                System.out.println("Error when trying to enable network!");
+                Log.d(LOGTAG, "Error when trying to enable network");
+                serverSocket.sendAck(commandID, ERROR_RESULT, "Error when trying to enable network: " + ssid);
+            }
+            //Wait for Wi-Fi to be connected
+            if (isConnectedToSsid(ssid, 6000)){
+                Log.d(LOGTAG, "Connected with network: " + ssid);
+                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Connected with network: " + ssid);
+            } else {
+                Log.d(LOGTAG, "Timeout when trying to connect network!");
+                serverSocket.sendAck(commandID, ERROR_RESULT, "TImeout when trying to run commnand " + jsonCommand.getString("Command"));
+            }
+            //debug prints
+            WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+            System.out.println(wifiInfo.getSupplicantState());
+
         } catch (JSONException e) {
             throw new RuntimeException(e);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
-        wifiManager.disconnect();
-
-
-        //TODO Napisac logikę sprawdzania czy wszystkie wymagane parametry zostały podane, np: w przypadku security type WPA2 musi być haslo
-//        wifiConfig.preSharedKey = "7MCE7KPN";
-//        if (ssidProvided){
-//            if (!commandParametersMap.get("SEC_TYPE").equalsIgnoreCase("open")){
-//
-//            }
-//        }
-
-        //TODO dodać obslugę próby dopisania sieci przy wyłączonym wifi, if wifiManager == null?
-
     }
-
     private void closeClientConnection() {
         serverSocket.shutdown();
     }
@@ -279,12 +299,12 @@ public class CommandHandler {
         WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
         WifiInfo wifiInfo = wifiManager.getConnectionInfo();
         String currentSsid = "<unknown ssid>";
-        int waited = 0;
+        int waitTime = 0;
         int step = 200;
 
-        while (waited < timeoutMilliseconds && (currentSsid == null || currentSsid.equals("<unknown ssid>"))) {
+        while (waitTime < timeoutMilliseconds && (currentSsid == null || currentSsid.equals("<unknown ssid>"))) {
             Thread.sleep(step);
-            waited += step;
+            waitTime += step;
             wifiInfo = wifiManager.getConnectionInfo(); // <-- ponowne pobranie stanu
             currentSsid = wifiInfo.getSSID();
             Log.d(LOGTAG, "Waiting for SSID... currently: " + currentSsid);
