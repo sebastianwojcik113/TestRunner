@@ -45,10 +45,10 @@ public class CommandHandler {
             //Check command type and run specific action
             switch(commandToHandle){
                 case "ENABLE_WIFI":
-                    enableWifi(commandID);
+                    switchWifi(commandID, true);
                     break;
                 case "DISABLE_WIFI":
-                    disableWifi(commandID);
+                    switchWifi(commandID, false);
                     break;
                 case "CLOSE_CONNECTION":
                     closeClientConnection();
@@ -76,6 +76,7 @@ public class CommandHandler {
         WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         try {
             int netIdToRemove = getNetId(jsonCommand.getString("SSID"));
+            Log.d(LOGTAG, "netID to remove: " + netIdToRemove);
             int commandID = Integer.parseInt(jsonCommand.getString("Command_ID"));
             String ssid = jsonCommand.getString("SSID");
             if (netIdToRemove < 0){
@@ -195,6 +196,7 @@ public class CommandHandler {
     }
 
     private int getNetId(String ssid) {
+        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         //Check if any configured networks found
         @SuppressLint("MissingPermission") List<WifiConfiguration> configuredNetworks = wifiManager.getConfiguredNetworks();
         if (configuredNetworks == null){
@@ -219,40 +221,36 @@ public class CommandHandler {
     private void closeClientConnection() {
         serverSocket.shutdown();
     }
-    private void disableWifi(int commandID) {
+    private void switchWifi(int commandID, boolean switchWifi) {
         WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-        if(wifiManager != null) {
-            wifiManager.setWifiEnabled(false);
-            Log.d(LOGTAG, "Calling action to disable WiFi");
-            serverSocket.sendMessage("Wi-Fi disabled successfully");
-            serverSocket.sendAck(commandID, COMPLETE_RESULT, "Wi-FI status: " + wifiManager.getWifiState());
-        } else {
-            Log.e(LOGTAG, "WifiManager is null! Cannot disable Wi-Fi. Possible reasons: context problem or device doesn't support Wi-Fi.");
-            serverSocket.sendMessage("Error: Wi-Fi manager unavailable. Please check device capabilities or app permissions.");
-            serverSocket.sendAck(commandID, ERROR_RESULT, "Wi-Fi manager is null!");
-        }
-    }
-    private void enableWifi(int commandID) {
-        WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
         int timeout = 5000;
 
-        if(wifiManager != null) {
-            Log.d(LOGTAG, "Current Wi-Fi state: " + parseWifiState(wifiManager.getWifiState()));
-            wifiManager.setWifiEnabled(true);
-            if(waitForWifiStateChange(wifiManager.WIFI_STATE_ENABLED, timeout)){
-                //WIFI_STATE_DISABLED -> WIFI_STATE_ENABLING -> WIFI_STATE_ENABLED
-                Log.d(LOGTAG, "Calling action to enable WiFi");
-                serverSocket.sendMessage("Wi-Fi enabled successfully");
-                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Wi-FI status: " + parseWifiState(wifiManager.getWifiState()));
-            }
-        } else {
-            Log.e(LOGTAG, "WifiManager is null! Cannot enable Wi-Fi. Possible reasons: context problem or device doesn't support Wi-Fi.");
+        if (wifiManager == null) {
+            Log.e(LOGTAG, "WifiManager is null! Cannot change Wi-Fi state. Possible reasons: context problem or device doesn't support Wi-Fi.");
             serverSocket.sendMessage("Error: Wi-Fi manager unavailable. Please check device capabilities or app permissions.");
             serverSocket.sendAck(commandID, ERROR_RESULT, "Wi-Fi manager is null!");
+            return;
+        }
+
+        String action = switchWifi ? "enable" : "disable";
+        Log.d(LOGTAG, "Current Wi-Fi state: " + parseWifiState(wifiManager.getWifiState()));
+        wifiManager.setWifiEnabled(switchWifi);
+
+        int targetState = switchWifi ? WifiManager.WIFI_STATE_ENABLED : WifiManager.WIFI_STATE_DISABLED;
+
+        if (waitForWifiStateChange(targetState, timeout)) {
+            String successMessage = switchWifi ? "Wi-Fi enabled successfully" : "Wi-Fi disabled successfully";
+            Log.d(LOGTAG, successMessage);
+            serverSocket.sendMessage(successMessage);
+            serverSocket.sendAck(commandID, COMPLETE_RESULT, "Wi-Fi status: " + parseWifiState(wifiManager.getWifiState()));
+        } else {
+            String timeoutMessage = "Timeout while trying to " + action + " Wi-Fi";
+            Log.w(LOGTAG, timeoutMessage);
+            serverSocket.sendMessage("Warning: " + timeoutMessage);
+            serverSocket.sendAck(commandID, ERROR_RESULT, timeoutMessage);
         }
     }
     private String parseWifiState(int state){
-        WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
         HashMap<Integer, String> wifiStateMap = new  HashMap<Integer, String>();
         wifiStateMap.put(0, "WIFI_STATE_DISABLING");
         wifiStateMap.put(1, "WIFI_STATE_DISABLED");
