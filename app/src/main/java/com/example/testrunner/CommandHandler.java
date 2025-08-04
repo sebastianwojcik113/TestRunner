@@ -56,6 +56,9 @@ public class CommandHandler {
                 case "WIFI_ADD_NETWORK":
                     addWifiNetworkConfig(commandObj);
                     break;
+                case "WIFI_REMOVE_NETWORK":
+                    removeWifiNetworkConfig(commandObj);
+                    break;
                 case "WIFI_CONNECT":
                     wifiConnect(commandObj);
                     break;
@@ -68,6 +71,28 @@ public class CommandHandler {
             throw new RuntimeException(e);
         }
     }
+
+    private void removeWifiNetworkConfig(JSONObject jsonCommand) {
+        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        try {
+            int netIdToRemove = getNetId(jsonCommand.getString("SSID"));
+            int commandID = Integer.parseInt(jsonCommand.getString("Command_ID"));
+            String ssid = jsonCommand.getString("SSID");
+            if (netIdToRemove < 0){
+                //Check if netId found in current configurations, netIdToRemove should be highher than -1
+                Log.e(LOGTAG, "Unable to find Wi-Fi network profile. Configuration may not exist!");
+                serverSocket.sendAck(commandID, ERROR_RESULT, "Unable to remove Wi-Fi network profile: " + ssid + " SSID may be incorrect or configuration not exist");
+                return;
+            }
+            if (wifiManager.removeNetwork(netIdToRemove)){
+                Log.d(LOGTAG, "Network profile successfully removed: " + ssid);
+                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Network profile successfully removed: " + ssid);
+            }
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private void addWifiNetworkConfig(JSONObject jsonCommand) {
         WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         try {
