@@ -123,6 +123,7 @@ public class CommandHandler {
     }
     private void wifiConnect(JSONObject jsonCommand) {
         WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        int netIDToConnect;
         try {
             int commandID = Integer.parseInt(jsonCommand.getString("Command_ID"));
             String ssid = jsonCommand.optString("SSID", null);
@@ -132,32 +133,14 @@ public class CommandHandler {
                 serverSocket.sendAck(commandID, ERROR_RESULT, "Command " + jsonCommand.getString("Command") + " requires SSID name provided!");
                 return;
             }
-            //Check if any configured networks found
-            @SuppressLint("MissingPermission") List<WifiConfiguration> configuredNetworks = wifiManager.getConfiguredNetworks();
-            if (configuredNetworks == null){
-                Log.e(LOGTAG, "No configured Wi-Fi networks found!");
-                serverSocket.sendAck(commandID, ERROR_RESULT, "No configured networks. Action " + jsonCommand.getString("Command") + " requires WIFI_ADD_NETWORK to be used before!");
-                return;
-            }
-            //Looking for netID of provided SSID
-            int netIDToConnect = -1;
-            for (WifiConfiguration wifiConfiguration : configuredNetworks){
-                if (wifiConfiguration.SSID != null){
-                    String configuredSsid = wifiConfiguration.SSID.replace("\"", "");
-                    System.out.println(wifiConfiguration);
-                    if (configuredSsid.equals(ssid)){
-                        netIDToConnect = wifiConfiguration.networkId;
-                        break;
-                    }
-                }
-            }
+            netIDToConnect = getNetId(ssid);
             //Check if netID found, if not then netID would stay with value -1
             if (netIDToConnect < 0){
                 Log.e(LOGTAG, "WifiConfiguration for SSID " + ssid + "not found!");
-                serverSocket.sendAck(commandID, ERROR_RESULT, "WifiConfiguration for SSID " + ssid + "not found!");
+                serverSocket.sendAck(commandID, ERROR_RESULT, "WifiConfiguration for SSID " + ssid + "not found! Action " + jsonCommand.getString("Command") + " requires WIFI-ADD_NETWORK to be used before");
                 return;
             }
-            wifiManager.disconnect();
+            //wifiManager.disconnect();
             //Try to enable network and connect
             if (wifiManager.enableNetwork(netIDToConnect, true)) {
                 System.out.println("Connection info after enableNetwork: " + wifiManager.getConnectionInfo());
@@ -185,6 +168,29 @@ public class CommandHandler {
             throw new RuntimeException(e);
         }
     }
+
+    private int getNetId(String ssid) {
+        //Check if any configured networks found
+        @SuppressLint("MissingPermission") List<WifiConfiguration> configuredNetworks = wifiManager.getConfiguredNetworks();
+        if (configuredNetworks == null){
+            Log.e(LOGTAG, "No configured Wi-Fi networks found!");
+            serverSocket.sendMessage("No configured networks found!");
+            return -1;
+        }
+        //Looking for netID of provided SSID
+        int netId = -1;
+        for (WifiConfiguration wifiConfiguration : configuredNetworks){
+            if (wifiConfiguration.SSID != null){
+                String configuredSsid = wifiConfiguration.SSID.replace("\"", "");
+                //System.out.println(wifiConfiguration);
+                if (configuredSsid.equals(ssid)){
+                    netId = wifiConfiguration.networkId;
+                }
+            }
+        }
+        return netId;
+    }
+
     private void closeClientConnection() {
         serverSocket.shutdown();
     }
@@ -206,13 +212,13 @@ public class CommandHandler {
         int timeout = 5000;
 
         if(wifiManager != null) {
-            Log.d(LOGTAG, "Current Wi-Fi state: " + wifiManager.getWifiState());
+            Log.d(LOGTAG, "Current Wi-Fi state: " + parseWifiState(wifiManager.getWifiState()));
             wifiManager.setWifiEnabled(true);
             if(waitForWifiStateChange(wifiManager.WIFI_STATE_ENABLED, timeout)){
                 //WIFI_STATE_DISABLED -> WIFI_STATE_ENABLING -> WIFI_STATE_ENABLED
                 Log.d(LOGTAG, "Calling action to enable WiFi");
                 serverSocket.sendMessage("Wi-Fi enabled successfully");
-                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Wi-FI status: " + wifiManager.getWifiState());
+                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Wi-FI status: " + parseWifiState(wifiManager.getWifiState()));
             }
         } else {
             Log.e(LOGTAG, "WifiManager is null! Cannot enable Wi-Fi. Possible reasons: context problem or device doesn't support Wi-Fi.");
