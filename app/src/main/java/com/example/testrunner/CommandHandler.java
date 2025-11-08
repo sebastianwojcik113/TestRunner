@@ -5,6 +5,7 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
@@ -298,22 +299,25 @@ public class CommandHandler {
     }
     private boolean isConnectedToSsid(String expectedSsid, int timeoutMilliseconds) throws InterruptedException {
         WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-        WifiInfo wifiInfo = wifiManager.getConnectionInfo();
-        String currentSsid = "<unknown ssid>";
         int waitTime = 0;
         int step = 200;
+
+        WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+        String currentSsid = wifiInfo.getSSID();
+        SupplicantState supplicantState = wifiInfo.getSupplicantState();
 
         while (waitTime < timeoutMilliseconds && (currentSsid == null || currentSsid.equals("<unknown ssid>"))) {
             Thread.sleep(step);
             waitTime += step;
             wifiInfo = wifiManager.getConnectionInfo(); // <-- ponowne pobranie stanu
             currentSsid = wifiInfo.getSSID();
-            Log.d(LOGTAG, "Waiting for SSID... currently: " + currentSsid);
+            Log.d(LOGTAG, "Waiting for SSID... currently: " + currentSsid + ", Supplicant state: " + supplicantState);
             //TODO dodać sprawdzenie czy supplicantState ma odpowiedni status
             if (currentSsid.replace("\"", "").equals(expectedSsid)){
                 return true;
             }
         }
+        Log.w(LOGTAG, "Timeout while waiting for connect to SSID: " + expectedSsid);
         return false;
     }
 
