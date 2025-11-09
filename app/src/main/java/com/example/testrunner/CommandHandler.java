@@ -6,6 +6,7 @@ import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
+import android.text.TextPaint;
 import android.util.Log;
 
 import org.json.JSONException;
@@ -26,6 +27,7 @@ public class CommandHandler {
     public CommandHandler(Context context, TRServerSocket serverSocket){
         this.context = context;
         this.serverSocket = serverSocket;
+        this.wifiManager = (WifiManager) this.context.getSystemService(Context.WIFI_SERVICE);
     }
 
     public void handleCommand(String jsonCommandToHandle){
@@ -38,8 +40,12 @@ public class CommandHandler {
             int commandID = commandObj.getInt("Command_ID");
             //Check command type and run specific action
             switch(commandToHandle){
+                case "DELAY":
+                    delayResponse(commandID);
+                    break;
                 case "WIFI_CLEAR_ALL":
                     removeAllNetworks(commandID);
+                    break;
                 case "ENABLE_WIFI":
                     switchWifi(commandID, true);
                     break;
@@ -58,6 +64,9 @@ public class CommandHandler {
                 case "WIFI_CONNECT":
                     wifiConnect(commandObj);
                     break;
+                case "WIFI_CHECK_SUPPLICANT_STATE":
+                    wifiCheckSupplicantState(commandObj);
+                    break;
                 default:
                     unknownCommandResponse(commandID, commandToHandle);
 
@@ -68,6 +77,11 @@ public class CommandHandler {
         }
     }
 
+    private void delayResponse(int commandID) {
+        Log.d(LOGTAG, "Received delay command, waiting for next commands...");
+        serverSocket.sendAck(commandID, COMPLETE_RESULT, "Received delay command, waiting for next commands...");
+    }
+
     private void unknownCommandResponse(int commandID, String commandToHandle) {
         Log.e(LOGTAG, "Received unknown command: " + commandToHandle);
         serverSocket.sendAck(commandID, ERROR_RESULT, "Received unknown command: " + commandToHandle);
@@ -75,7 +89,6 @@ public class CommandHandler {
 
     //NOT WORKING
     private void removeAllNetworks(int commandID) {
-        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
 
         if (wifiManager == null) {
             Log.e(LOGTAG, "WifiManager is null — cannot clear configured networks!");
@@ -123,7 +136,6 @@ public class CommandHandler {
     }
 
     private void removeWifiNetworkConfig(JSONObject jsonCommand) {
-        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         try {
             int netIdToRemove = getNetId(jsonCommand.getString("SSID"));
             Log.d(LOGTAG, "netID to remove: " + netIdToRemove);
@@ -145,7 +157,6 @@ public class CommandHandler {
     }
 
     private void addWifiNetworkConfig(JSONObject jsonCommand) {
-        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         try {
             int commandID = Integer.parseInt(jsonCommand.getString("Command_ID"));
             String ssid = jsonCommand.optString("SSID", null);
@@ -205,7 +216,6 @@ public class CommandHandler {
         }
     }
     private void wifiConnect(JSONObject jsonCommand) {
-        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         int netIDToConnect;
         try {
             int commandID = Integer.parseInt(jsonCommand.getString("Command_ID"));
@@ -216,11 +226,11 @@ public class CommandHandler {
                 serverSocket.sendAck(commandID, ERROR_RESULT, "Command " + jsonCommand.getString("Command") + " requires SSID name provided!");
                 return;
             }
-            //Check if DUT is connected currently to the expected network
-            if(isConnectedToSsid(ssid, 5000)){
-                Log.d(LOGTAG, "Already connected to the network: " + ssid + ". Proceeding with next steps...");
-                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Already connected to the network: " + ssid + ". Proceeding with next steps...");
-            }
+//            //Check if DUT is connected currently to the expected network
+//            if(isConnectedToSsid(ssid, 5000)){
+//                Log.d(LOGTAG, "Already connected to the network: " + ssid + ". Proceeding with next steps...");
+//                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Already connected to the network: " + ssid + ". Proceeding with next steps...");
+//            }
 
             netIDToConnect = getNetId(ssid);
             //Check if netID found, if not then netID would stay with value -1
@@ -258,9 +268,8 @@ public class CommandHandler {
         }
     }
     private int getNetId(String ssid) {
-        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-        int retries = 5;
-        int delayMs = 500;
+        int retries = 20;
+        int delayMs = 250;
 
         for (int i = 0; i < retries; i++) {
             @SuppressLint("MissingPermission")
@@ -285,7 +294,6 @@ public class CommandHandler {
         return -1;
     }
 //    private int getNetId(String ssid) {
-//        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
 //        //Check if any configured networks found
 //        @SuppressLint("MissingPermission") List<WifiConfiguration> configuredNetworks = wifiManager.getConfiguredNetworks();
 //        if (configuredNetworks == null){
@@ -311,7 +319,6 @@ public class CommandHandler {
         serverSocket.shutdown();
     }
     private void switchWifi(int commandID, boolean switchWifi) {
-        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         int timeout = 5000;
 
         if (wifiManager == null) {
@@ -339,22 +346,6 @@ public class CommandHandler {
             serverSocket.sendAck(commandID, ERROR_RESULT, timeoutMessage);
         }
     }
-    private String parseWifiState(int state){
-        HashMap<Integer, String> wifiStateMap = new  HashMap<Integer, String>();
-        wifiStateMap.put(0, "WIFI_STATE_DISABLING");
-        wifiStateMap.put(1, "WIFI_STATE_DISABLED");
-        wifiStateMap.put(2, "WIFI_STATE_ENABLING");
-        wifiStateMap.put(3, "WIFI_STATE_ENABLED");
-        wifiStateMap.put(4, "WIFI_STATE_UNKNOWN");
-        String wifiState = "";
-
-        if (wifiStateMap.containsKey(state)){
-            wifiState = wifiStateMap.get(state);
-        } else {
-            System.out.println("Unable to match Wi-Fi state key to value. Check if following Wi-Fi state is in HashMap: " + state);
-        }
-        return wifiState;
-    }
     /**
      * Checking the Wi-Fi state every checkingInterval time until it is changed to the
      * expectedState or timeoutMilliseconds time elapsed
@@ -363,9 +354,28 @@ public class CommandHandler {
      * @param timeoutMilliseconds timeout time
      * @return true if expectedState is reached, false if timeout time elapsed
      */
+    private void wifiCheckSupplicantState(JSONObject commandObj) {
+        WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+        SupplicantState supplicantstate = wifiInfo.getSupplicantState();
+        int commandID = commandObj.optInt("Command_ID", -1);
+        try {
+            String expectedState = commandObj.getString("Expected_state");
+            SupplicantState expected = SupplicantState.valueOf(expectedState.toUpperCase());
+            if (supplicantstate.equals(expected)){
+                Log.d(LOGTAG, "Current supplicant state: " + supplicantstate.name() + ", Expected state: " + expectedState.toUpperCase());
+                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Current supplicant state: " + supplicantstate.name() + ", Expected state: " + expectedState.toUpperCase());
+            } else {
+                Log.e(LOGTAG, "Current supplicant state: " + supplicantstate.name() + ", Expected state: " + expectedState.toUpperCase());
+                serverSocket.sendAck(commandID, ERROR_RESULT, "Current supplicant state: " + supplicantstate.name() + ", Expected state: " + expectedState.toUpperCase());
+            }
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
+        } catch (IllegalArgumentException e) {
+            serverSocket.sendAck(commandID, "ERROR", "Unknown SupplicantState value: " + e.getMessage());
+        }
+    }
     private boolean waitForWifiStateChange(int expectedState, int timeoutMilliseconds){
         //TODO Zmiana logiki sprawdzania stanu wifi -> BroadcastReceiver?
-        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         int elapsedTime = 0;
         int checkingInterval = 100; //checking wifi state every 50ms
 
@@ -385,8 +395,39 @@ public class CommandHandler {
         Log.d(LOGTAG, "Action waitForWifiStateChange timed out!");
         return false;
     }
+    private String parseWifiState(int state){
+        HashMap<Integer, String> wifiStateMap = new  HashMap<Integer, String>();
+        wifiStateMap.put(0, "WIFI_STATE_DISABLING");
+        wifiStateMap.put(1, "WIFI_STATE_DISABLED");
+        wifiStateMap.put(2, "WIFI_STATE_ENABLING");
+        wifiStateMap.put(3, "WIFI_STATE_ENABLED");
+        wifiStateMap.put(4, "WIFI_STATE_UNKNOWN");
+        String wifiState = "";
+
+        if (wifiStateMap.containsKey(state)){
+            wifiState = wifiStateMap.get(state);
+        } else {
+            System.out.println("Unable to match Wi-Fi state key to value. Check if following Wi-Fi state is in HashMap: " + state);
+        }
+        return wifiState;
+    }
+    private String parseSupplicantState(int state){
+        HashMap<Integer, String> wifiStateMap = new  HashMap<Integer, String>();
+        wifiStateMap.put(0, "WIFI_STATE_DISABLING");
+        wifiStateMap.put(1, "WIFI_STATE_DISABLED");
+        wifiStateMap.put(2, "WIFI_STATE_ENABLING");
+        wifiStateMap.put(3, "WIFI_STATE_ENABLED");
+        wifiStateMap.put(4, "WIFI_STATE_UNKNOWN");
+        String wifiState = "";
+
+        if (wifiStateMap.containsKey(state)){
+            wifiState = wifiStateMap.get(state);
+        } else {
+            System.out.println("Unable to match Wi-Fi state key to value. Check if following Wi-Fi state is in HashMap: " + state);
+        }
+        return wifiState;
+    }
     private boolean isConnectedToSsid(String expectedSsid, int timeoutMilliseconds) throws InterruptedException {
-        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         int waitTime = 0;
         int step = 200;
 
@@ -395,6 +436,7 @@ public class CommandHandler {
         SupplicantState supplicantState = wifiInfo.getSupplicantState();
         //Skip if already connected to the expected SSID
         if (currentSsid.equals(expectedSsid)){
+            Log.d(LOGTAG, "Already connected to: " + currentSsid + ", Supplicant state: " + supplicantState);
             return true;
         }
         while (waitTime < timeoutMilliseconds && (currentSsid == null || currentSsid.equals("<unknown ssid>"))) {

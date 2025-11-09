@@ -4,6 +4,8 @@ import android.Manifest;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 
 import androidx.activity.EdgeToEdge;
@@ -30,6 +32,13 @@ public class MainActivity extends AppCompatActivity {
         // Enable location - required for some Wi-Fi actions
         dpm.setLocationEnabled(adminComponent, true);
 
+//        // Start foreground service to keep Wi-Fi operations alive
+//        Intent serviceIntent = new Intent(this, WifiControlService.class);
+//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+//            startForegroundService(serviceIntent);
+//        } else {
+//            startService(serviceIntent);
+//        }
 
         EdgeToEdge.enable(this);
         setContentView(com.example.testrunner.R.layout.activity_main);
