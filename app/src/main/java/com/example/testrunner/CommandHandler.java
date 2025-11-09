@@ -67,6 +67,9 @@ public class CommandHandler {
                 case "WIFI_CHECK_SUPPLICANT_STATE":
                     wifiCheckSupplicantState(commandObj);
                     break;
+                case "WAIT_FOR_SUPPLICANT_STATE":
+                    waitForSupplicantState(commandObj);
+                    break;
                 default:
                     unknownCommandResponse(commandID, commandToHandle);
 
@@ -76,6 +79,59 @@ public class CommandHandler {
             throw new RuntimeException(e);
         }
     }
+
+    private void waitForSupplicantState(JSONObject commandObj) {
+        int commandID = commandObj.optInt("Command_ID", -1);
+        String expectedStateStr;
+        int timeoutSeconds = commandObj.optInt("Timeout", 10); // default 10s
+        int timeoutMiliseconds = timeoutSeconds * 1000;
+
+        try {
+            expectedStateStr = commandObj.getString("Expected_state");
+        } catch (JSONException e) {
+            serverSocket.sendAck(commandID, ERROR_RESULT, "Missing 'Expected_state' in command!");
+            return;
+        }
+
+        SupplicantState expectedState;
+        try {
+            expectedState = SupplicantState.valueOf(expectedStateStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            serverSocket.sendAck(commandID, ERROR_RESULT, "Unknown SupplicantState: " + expectedStateStr);
+            return;
+        }
+
+        long startTime = System.currentTimeMillis();
+        long checkInterval = 250; // ms
+
+        Log.d(LOGTAG, "Waiting for supplicant to reach state: " + expectedState.name());
+
+        while (System.currentTimeMillis() - startTime < timeoutMiliseconds) {
+            WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+            SupplicantState currentState = wifiInfo.getSupplicantState();
+
+            if (currentState == expectedState) {
+                Log.d(LOGTAG, "Supplicant state: " + currentState.name() + ", Expected state: " + expectedState.name());
+                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Supplicant state: " + currentState.name() + ", Expected state: " + expectedState.name());
+                return;
+            }
+
+            try {
+                Thread.sleep(checkInterval);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                serverSocket.sendAck(commandID, ERROR_RESULT, "Interrupted while waiting for supplicant state");
+                return;
+            }
+        }
+
+        // Timeout
+        WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+        SupplicantState finalState = wifiInfo.getSupplicantState();
+        Log.w(LOGTAG, "Timeout waiting for supplicant to reach " + expectedState.name() + " (final state: " + finalState.name() + ")");
+        serverSocket.sendAck(commandID, ERROR_RESULT, "Timeout waiting for supplicant to reach " + expectedState.name() + " (final: " + finalState.name() + ")");
+    }
+
 
     private void delayResponse(int commandID) {
         Log.d(LOGTAG, "Received delay command, waiting for next commands...");
