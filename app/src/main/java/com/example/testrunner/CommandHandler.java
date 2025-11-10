@@ -64,88 +64,36 @@ public class CommandHandler {
                 case "WIFI_CONNECT":
                     wifiConnect(commandObj);
                     break;
+                case "WIFI_DISCONNECT":
+                    wifiDisconnect(commandObj);
+                    break;
                 case "WIFI_CHECK_SUPPLICANT_STATE":
                     wifiCheckSupplicantState(commandObj);
                     break;
                 case "WAIT_FOR_SUPPLICANT_STATE":
                     waitForSupplicantState(commandObj);
                     break;
+                case "PROMISE_SUPPLICANT_STATE":
+                    promiseSupplicantState(commandObj);
+                    break;
                 default:
                     unknownCommandResponse(commandID, commandToHandle);
-
-
             }
         } catch (JSONException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private void waitForSupplicantState(JSONObject commandObj) {
-        int commandID = commandObj.optInt("Command_ID", -1);
-        String expectedStateStr;
-        int timeoutSeconds = commandObj.optInt("Timeout", 10); // default 10s
-        int timeoutMiliseconds = timeoutSeconds * 1000;
-
-        try {
-            expectedStateStr = commandObj.getString("Expected_state");
-        } catch (JSONException e) {
-            serverSocket.sendAck(commandID, ERROR_RESULT, "Missing 'Expected_state' in command!");
-            return;
-        }
-
-        SupplicantState expectedState;
-        try {
-            expectedState = SupplicantState.valueOf(expectedStateStr.toUpperCase());
-        } catch (IllegalArgumentException e) {
-            serverSocket.sendAck(commandID, ERROR_RESULT, "Unknown SupplicantState: " + expectedStateStr);
-            return;
-        }
-
-        long startTime = System.currentTimeMillis();
-        long checkInterval = 250; // ms
-
-        Log.d(LOGTAG, "Waiting for supplicant to reach state: " + expectedState.name());
-
-        while (System.currentTimeMillis() - startTime < timeoutMiliseconds) {
-            WifiInfo wifiInfo = wifiManager.getConnectionInfo();
-            SupplicantState currentState = wifiInfo.getSupplicantState();
-
-            if (currentState == expectedState) {
-                Log.d(LOGTAG, "Supplicant state: " + currentState.name() + ", Expected state: " + expectedState.name());
-                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Supplicant state: " + currentState.name() + ", Expected state: " + expectedState.name());
-                return;
-            }
-
-            try {
-                Thread.sleep(checkInterval);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                serverSocket.sendAck(commandID, ERROR_RESULT, "Interrupted while waiting for supplicant state");
-                return;
-            }
-        }
-
-        // Timeout
-        WifiInfo wifiInfo = wifiManager.getConnectionInfo();
-        SupplicantState finalState = wifiInfo.getSupplicantState();
-        Log.w(LOGTAG, "Timeout waiting for supplicant to reach " + expectedState.name() + " (final state: " + finalState.name() + ")");
-        serverSocket.sendAck(commandID, ERROR_RESULT, "Timeout waiting for supplicant to reach " + expectedState.name() + " (final: " + finalState.name() + ")");
-    }
-
-
     private void delayResponse(int commandID) {
         Log.d(LOGTAG, "Received delay command, waiting for next commands...");
         serverSocket.sendAck(commandID, COMPLETE_RESULT, "Received delay command, waiting for next commands...");
     }
-
     private void unknownCommandResponse(int commandID, String commandToHandle) {
         Log.e(LOGTAG, "Received unknown command: " + commandToHandle);
         serverSocket.sendAck(commandID, ERROR_RESULT, "Received unknown command: " + commandToHandle);
     }
-
     //NOT WORKING
     private void removeAllNetworks(int commandID) {
-
         if (wifiManager == null) {
             Log.e(LOGTAG, "WifiManager is null — cannot clear configured networks!");
             serverSocket.sendAck(commandID, ERROR_RESULT, "WifiManager unavailable — cannot clear networks.");
@@ -183,14 +131,12 @@ public class CommandHandler {
             Log.d(LOGTAG, "Cleared " + removedCount + " Wi-Fi configurations.");
             serverSocket.sendAck(commandID, COMPLETE_RESULT, "Cleared " + removedCount + " Wi-Fi configurations.");
         }
-
-        // Jeśli Wi-Fi było wcześniej wyłączone, przywróć stan
+        // If WiFi was previosuly disabled restore the state
         if (temporarilyEnabled) {
             Log.d(LOGTAG, "Restoring previous Wi-Fi state (disabling)...");
             wifiManager.setWifiEnabled(false);
         }
     }
-
     private void removeWifiNetworkConfig(JSONObject jsonCommand) {
         try {
             int netIdToRemove = getNetId(jsonCommand.getString("SSID"));
@@ -211,7 +157,6 @@ public class CommandHandler {
             throw new RuntimeException(e);
         }
     }
-
     private void addWifiNetworkConfig(JSONObject jsonCommand) {
         try {
             int commandID = Integer.parseInt(jsonCommand.getString("Command_ID"));
@@ -230,7 +175,6 @@ public class CommandHandler {
                     serverSocket.sendAck(commandID, COMPLETE_RESULT, "Network " + ssid + " is already saved");
                     return;
                 }
-
                 // Add SSID to the wificonfig
                 WifiConfiguration wifiConfig = new WifiConfiguration();
                 wifiConfig.SSID = "\"" + ssid + "\"";
@@ -323,6 +267,45 @@ public class CommandHandler {
             throw new RuntimeException(e);
         }
     }
+    private void wifiDisconnect(JSONObject jsonCommand) {
+        int netIDToDisconnect;
+        try {
+            int commandID = Integer.parseInt(jsonCommand.getString("Command_ID"));
+            String ssid = jsonCommand.optString("SSID", null);
+            // Check if command contain SSID at all
+            if (ssid == null){
+                Log.e(LOGTAG, "Command " + jsonCommand.getString("Command") + " does not contain any network name(SSID)");
+                serverSocket.sendAck(commandID, ERROR_RESULT, "Command " + jsonCommand.getString("Command") + " requires SSID name provided!");
+                return;
+            }
+//            //Check if DUT is connected currently to the expected network
+//            if(isConnectedToSsid(ssid, 5000)){
+//                Log.d(LOGTAG, "Already connected to the network: " + ssid + ". Proceeding with next steps...");
+//                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Already connected to the network: " + ssid + ". Proceeding with next steps...");
+//            }
+
+            netIDToDisconnect = getNetId(ssid);
+            //Check if netID found, if not then netID would stay with value -1
+            if (netIDToDisconnect < 0){
+                Log.e(LOGTAG, "WifiConfiguration for SSID " + ssid + " not found!");
+//                Log.d(LOGTAG, "Net configs: " + wifiManager.getConnectionInfo())
+                serverSocket.sendAck(commandID, ERROR_RESULT, "WifiConfiguration for SSID " + ssid + " not found! Seems DUT is not connected to any network.");
+                return;
+            }
+            //wifiManager.disconnect();
+            //Try to enable network and connect
+            if (wifiManager.disableNetwork(netIDToDisconnect)) {
+                Log.d(LOGTAG, "Connection info after disableNetwork: " + wifiManager.getConnectionInfo());
+                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Successfully disconnected with network: " + ssid);
+            } else {
+                Log.d(LOGTAG, "Error when trying to disconnect network");
+                serverSocket.sendAck(commandID, ERROR_RESULT, "Error when trying to disconnect network: " + ssid);
+            }
+
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
+        }
+    }
     private int getNetId(String ssid) {
         int retries = 20;
         int delayMs = 250;
@@ -349,27 +332,6 @@ public class CommandHandler {
         Log.w(LOGTAG, "NetId not found for SSID: " + ssid + " after retries.");
         return -1;
     }
-//    private int getNetId(String ssid) {
-//        //Check if any configured networks found
-//        @SuppressLint("MissingPermission") List<WifiConfiguration> configuredNetworks = wifiManager.getConfiguredNetworks();
-//        if (configuredNetworks == null){
-//            Log.e(LOGTAG, "No configured Wi-Fi networks found!");
-//            serverSocket.sendMessage("No configured networks found!");
-//            return -1;
-//        }
-//        //Looking for netID of provided SSID
-//        int netId = -1;
-//        for (WifiConfiguration wifiConfiguration : configuredNetworks){
-//            if (wifiConfiguration.SSID != null){
-//                String configuredSsid = wifiConfiguration.SSID.replace("\"", "");
-//                System.out.println("TestRunner: " + wifiConfiguration);
-//                if (configuredSsid.equals(ssid)){
-//                    netId = wifiConfiguration.networkId;
-//                }
-//            }
-//        }
-//        return netId;
-//    }
 
     private void closeClientConnection() {
         serverSocket.shutdown();
@@ -430,6 +392,112 @@ public class CommandHandler {
             serverSocket.sendAck(commandID, "ERROR", "Unknown SupplicantState value: " + e.getMessage());
         }
     }
+    private void promiseSupplicantState(JSONObject commandObj) {
+        int commandID = commandObj.optInt("Command_ID", -1);
+        String expectedStateStr;
+        int timeoutSeconds;
+        int timeoutMiliseconds;
+
+        try {
+            expectedStateStr = commandObj.getString("Expected_state");
+        } catch (JSONException e) {
+            serverSocket.sendAck(commandID, ERROR_RESULT, "Missing 'Expected_state' in command!");
+            return;
+        }
+        try {
+            timeoutSeconds = commandObj.getInt("Timeout");
+        } catch (JSONException e) {
+            serverSocket.sendAck(commandID, ERROR_RESULT, "Missing 'Timeout' in command!");
+            return;
+        }
+        timeoutMiliseconds = timeoutSeconds * 1000;
+        WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+        SupplicantState expectedState;
+        SupplicantState currentState = wifiInfo.getSupplicantState();
+        try {
+            expectedState = SupplicantState.valueOf(expectedStateStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            serverSocket.sendAck(commandID, ERROR_RESULT, "Unknown SupplicantState: " + expectedStateStr);
+            return;
+        }
+
+        long startTime = System.currentTimeMillis();
+        long checkInterval = 250; // ms
+
+        Log.d(LOGTAG, "Start to monitor if supplicant keeps the expected state: " + expectedState.name());
+
+        while (System.currentTimeMillis() - startTime < timeoutMiliseconds) {
+            wifiInfo = wifiManager.getConnectionInfo();
+            currentState = wifiInfo.getSupplicantState();
+
+            if (currentState != expectedState) {
+                Log.d(LOGTAG, "Supplicant state: " + currentState.name() + ", Expected state: " + expectedState.name());
+                serverSocket.sendAck(commandID, ERROR_RESULT, "Supplicant state: " + currentState.name() + ", Expected state: " + expectedState.name());
+                return;
+            }
+
+            try {
+                Thread.sleep(checkInterval);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                serverSocket.sendAck(commandID, ERROR_RESULT, "Interrupted while waiting for supplicant state");
+                return;
+            }
+        }
+        serverSocket.sendAck(commandID, COMPLETE_RESULT, "Supplicant state: " + currentState.name() + ", Expected state: " + expectedState.name());
+    }
+
+    private void waitForSupplicantState(JSONObject commandObj) {
+        int commandID = commandObj.optInt("Command_ID", -1);
+        String expectedStateStr;
+        int timeoutSeconds = commandObj.optInt("Timeout", 10); // default 10s
+        int timeoutMiliseconds = timeoutSeconds * 1000;
+
+        try {
+            expectedStateStr = commandObj.getString("Expected_state");
+        } catch (JSONException e) {
+            serverSocket.sendAck(commandID, ERROR_RESULT, "Missing 'Expected_state' in command!");
+            return;
+        }
+
+        SupplicantState expectedState;
+        try {
+            expectedState = SupplicantState.valueOf(expectedStateStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            serverSocket.sendAck(commandID, ERROR_RESULT, "Unknown SupplicantState: " + expectedStateStr);
+            return;
+        }
+
+        long startTime = System.currentTimeMillis();
+        long checkInterval = 250; // ms
+
+        Log.d(LOGTAG, "Waiting for supplicant to reach state: " + expectedState.name());
+
+        while (System.currentTimeMillis() - startTime < timeoutMiliseconds) {
+            WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+            SupplicantState currentState = wifiInfo.getSupplicantState();
+
+            if (currentState == expectedState) {
+                Log.d(LOGTAG, "Supplicant state: " + currentState.name() + ", Expected state: " + expectedState.name());
+                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Supplicant state: " + currentState.name() + ", Expected state: " + expectedState.name());
+                return;
+            }
+
+            try {
+                Thread.sleep(checkInterval);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                serverSocket.sendAck(commandID, ERROR_RESULT, "Interrupted while waiting for supplicant state");
+                return;
+            }
+        }
+
+        // Timeout
+        WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+        SupplicantState finalState = wifiInfo.getSupplicantState();
+        Log.w(LOGTAG, "Timeout waiting for supplicant to reach " + expectedState.name() + " (final state: " + finalState.name() + ")");
+        serverSocket.sendAck(commandID, ERROR_RESULT, "Timeout waiting for supplicant to reach " + expectedState.name() + " (final: " + finalState.name() + ")");
+    }
     private boolean waitForWifiStateChange(int expectedState, int timeoutMilliseconds){
         //TODO Zmiana logiki sprawdzania stanu wifi -> BroadcastReceiver?
         int elapsedTime = 0;
@@ -467,22 +535,7 @@ public class CommandHandler {
         }
         return wifiState;
     }
-    private String parseSupplicantState(int state){
-        HashMap<Integer, String> wifiStateMap = new  HashMap<Integer, String>();
-        wifiStateMap.put(0, "WIFI_STATE_DISABLING");
-        wifiStateMap.put(1, "WIFI_STATE_DISABLED");
-        wifiStateMap.put(2, "WIFI_STATE_ENABLING");
-        wifiStateMap.put(3, "WIFI_STATE_ENABLED");
-        wifiStateMap.put(4, "WIFI_STATE_UNKNOWN");
-        String wifiState = "";
 
-        if (wifiStateMap.containsKey(state)){
-            wifiState = wifiStateMap.get(state);
-        } else {
-            System.out.println("Unable to match Wi-Fi state key to value. Check if following Wi-Fi state is in HashMap: " + state);
-        }
-        return wifiState;
-    }
     private boolean isConnectedToSsid(String expectedSsid, int timeoutMilliseconds) throws InterruptedException {
         int waitTime = 0;
         int step = 200;
