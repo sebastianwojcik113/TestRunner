@@ -191,6 +191,14 @@ public class CommandHandler {
                         wifiConfig.preSharedKey = "\"" + password + "\"";
 
                         break;
+                    case "WPA3":
+                        if (password == null) {
+                            serverSocket.sendAck(commandID, ERROR_RESULT, "WPA3 secured network requires password to be provided!");
+                            return;
+                        }
+                        wifiConfig.preSharedKey = "\"" + password + "\"";
+                        wifiConfig.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.SAE); // WPA3-Personal
+                        break;
                     case "OPEN":
                         wifiConfig.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.NONE);
                         break;
