@@ -7,13 +7,59 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <TextView
+    <ToggleButton
+        android:id="@+id/wifiStatusToggle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Hello World!"
+        android:layout_marginEnd="100dp"
+        android:layout_marginBottom="492dp"
+        android:checked="false"
+        android:text="WifiStatusToggleButton"
         app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <TextView
+        android:id="@+id/WifiStatusTextView"
+        android:layout_width="78dp"
+        android:layout_height="47dp"
+        android:layout_marginBottom="496dp"
+        android:text=" Wi-Fi status"
+        android:textSize="20sp"
+        android:visibility="visible"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/wifiStatusToggle"
+        app:layout_constraintHorizontal_bias="0.62"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <ToggleButton
+        android:id="@+id/wifiToggle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="92dp"
+        android:checked="false"
+        android:text="WifiToggleButton"
+        app:layout_constraintBottom_toTopOf="@+id/wifiStatusToggle"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/WifiTextView"
+        android:layout_width="78dp"
+        android:layout_height="47dp"
+        android:text="Wi-Fi"
+        android:textSize="20sp"
+        android:visibility="visible"
+        app:layout_constraintBottom_toTopOf="@+id/WifiStatusTextView"
+        app:layout_constraintEnd_toStartOf="@+id/wifiToggle"
+        app:layout_constraintHorizontal_bias="0.622"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <Button
+        android:id="@+id/button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Button"
+        tools:layout_editor_absoluteX="114dp"
+        tools:layout_editor_absoluteY="349dp" />
 </androidx.constraintlayout.widget.ConstraintLayout>

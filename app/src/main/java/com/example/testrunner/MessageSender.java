@@ -74,9 +74,6 @@ public class MessageSender extends Thread{
         }
     }
 
-
-    //TODO Przemyslec jak zaimplementowac ACK zmapowane z Command_ID i czy potrzebne?
-
     public void shutdown() {
         isRunning = false;
         //Close output stream

@@ -8,6 +8,7 @@ import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.text.TextPaint;
 import android.util.Log;
+import android.widget.ToggleButton;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -70,10 +71,10 @@ public class CommandHandler {
                 case "WIFI_CHECK_SUPPLICANT_STATE":
                     wifiCheckSupplicantState(commandObj);
                     break;
-                case "WAIT_FOR_SUPPLICANT_STATE":
+                case "WIFI_WAIT_FOR_SUPPLICANT_STATE":
                     waitForSupplicantState(commandObj);
                     break;
-                case "PROMISE_SUPPLICANT_STATE":
+                case "WIFI_PROMISE_SUPPLICANT_STATE":
                     promiseSupplicantState(commandObj);
                     break;
                 default:
@@ -183,6 +184,13 @@ public class CommandHandler {
                 //Check security type
                 switch (securityType.toUpperCase()) {
                     case "WPA":
+                        if (password == null) {
+                            serverSocket.sendAck(commandID, ERROR_RESULT, "WPA/WPA2 secured network requires password to be provided!");
+                            return;
+                        }
+                        wifiConfig.preSharedKey = "\"" + password + "\"";
+
+                        break;
                     case "WPA2":
                         if (password == null) {
                             serverSocket.sendAck(commandID, ERROR_RESULT, "WPA/WPA2 secured network requires password to be provided!");
@@ -224,56 +232,71 @@ public class CommandHandler {
         }
     }
     private void wifiConnect(JSONObject jsonCommand) {
-        int netIDToConnect;
-        try {
-            int commandID = Integer.parseInt(jsonCommand.getString("Command_ID"));
-            String ssid = jsonCommand.optString("SSID", null);
-            // Check if command contain SSID at all
-            if (ssid == null){
-                Log.e(LOGTAG, "Command " + jsonCommand.getString("Command") + " does not contain any network name(SSID)");
-                serverSocket.sendAck(commandID, ERROR_RESULT, "Command " + jsonCommand.getString("Command") + " requires SSID name provided!");
-                return;
-            }
-//            //Check if DUT is connected currently to the expected network
-//            if(isConnectedToSsid(ssid, 5000)){
-//                Log.d(LOGTAG, "Already connected to the network: " + ssid + ". Proceeding with next steps...");
-//                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Already connected to the network: " + ssid + ". Proceeding with next steps...");
-//            }
+            try {
+                int commandID = Integer.parseInt(jsonCommand.getString("Command_ID"));
+                String ssid = jsonCommand.optString("SSID", null);
 
-            netIDToConnect = getNetId(ssid);
-            //Check if netID found, if not then netID would stay with value -1
-            if (netIDToConnect < 0){
-                Log.e(LOGTAG, "WifiConfiguration for SSID " + ssid + " not found!");
-//                Log.d(LOGTAG, "Net configs: " + wifiManager.getConnectionInfo())
-                serverSocket.sendAck(commandID, ERROR_RESULT, "WifiConfiguration for SSID " + ssid + " not found! Action " + jsonCommand.getString("Command") + " requires WIFI-ADD_NETWORK to be used before");
-                return;
-            }
-            //wifiManager.disconnect();
-            //Try to enable network and connect
-            if (wifiManager.enableNetwork(netIDToConnect, true)) {
-                Log.d(LOGTAG, "Connection info after enableNetwork: " + wifiManager.getConnectionInfo());
-                Log.d(LOGTAG, "Network " + ssid + " enabled.");
-            } else {
-                Log.d(LOGTAG, "Error when trying to enable network");
-                serverSocket.sendAck(commandID, ERROR_RESULT, "Error when trying to enable network: " + ssid);
-            }
-            //Wait for Wi-Fi to be connected
-            if (isConnectedToSsid(ssid, 6000)){
-                Log.d(LOGTAG, "Connected with network: " + ssid);
-                serverSocket.sendAck(commandID, COMPLETE_RESULT, "Connected with network: " + ssid);
-            } else {
-                Log.d(LOGTAG, "Timeout when trying to connect network!");
-                serverSocket.sendAck(commandID, ERROR_RESULT, "TImeout when trying to run commnand " + jsonCommand.getString("Command"));
-            }
-            //debug prints
-            WifiInfo wifiInfo = wifiManager.getConnectionInfo();
-            Log.d(LOGTAG, String.valueOf(wifiInfo.getSupplicantState()));
+                if (ssid == null) {
+                    Log.e(LOGTAG, "Command requires SSID!");
+                    serverSocket.sendAck(commandID, ERROR_RESULT, "Command requires SSID value");
+                    return;
+                }
 
-        } catch (JSONException e) {
-            throw new RuntimeException(e);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
+                // Get netId of existing configuration
+                int netId = getNetId(ssid);
+
+                if (netId < 0) {
+                    Log.e(LOGTAG, "No WiFi config found for SSID: " + ssid);
+                    serverSocket.sendAck(commandID, ERROR_RESULT,
+                            "No WiFi config found for " + ssid + ". Use WIFI_ADD_NETWORK first!");
+                    return;
+                }
+
+                Log.d(LOGTAG, "Found configuration netID=" + netId + " — trying to connect");
+
+                // Disconnect from current WiFi if connected
+                wifiManager.disconnect();
+
+                // Attempt to enable autojoin — required on A12+ else network remains BLOCKED
+                try {
+                    wifiManager.allowAutojoinGlobal(true);
+                    Log.d(LOGTAG, "allowAutojoin(true) applied to network " + ssid);
+                } catch (Exception e) {
+                    Log.w(LOGTAG, "allowAutojoin not supported on this Android version");
+                }
+
+                // Try enabling network
+                boolean enableResult = wifiManager.enableNetwork(netId, true);
+                wifiManager.reconnect();
+
+                if (!enableResult) {
+                    Log.e(LOGTAG, "enableNetwork() returned FALSE, attempting updateNetwork() workaround");
+                    WifiConfiguration forceUpdate = new WifiConfiguration();
+                    forceUpdate.networkId = netId;
+                    wifiManager.updateNetwork(forceUpdate);
+                    wifiManager.reconnect();
+                }
+
+                // Wait for connection
+                if (isConnectedToSsid(ssid, 8000)) {
+                    Log.d(LOGTAG, "Connected successfully to: " + ssid);
+                    serverSocket.sendAck(commandID, COMPLETE_RESULT, "Connected to network: " + ssid);
+                } else {
+                    Log.e(LOGTAG, "Connection timed out for: " + ssid);
+                    serverSocket.sendAck(commandID, ERROR_RESULT, "Connection timeout for: " + ssid);
+                }
+
+                // Debug info print
+                WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+                Log.d(LOGTAG, "Final supplicant state: " + wifiInfo.getSupplicantState());
+
+            } catch (Exception e) {
+                Log.e(LOGTAG, "Unexpected exception in wifiConnect: " + e.getMessage());
+                serverSocket.sendAck(-1, ERROR_RESULT, "Unexpected error: " + e.getMessage());
+            }
+
+
+//
     }
     private void wifiDisconnect(JSONObject jsonCommand) {
         int netIDToDisconnect;
@@ -321,6 +344,7 @@ public class CommandHandler {
         for (int i = 0; i < retries; i++) {
             @SuppressLint("MissingPermission")
             List<WifiConfiguration> configuredNetworks = wifiManager.getConfiguredNetworks();
+            Log.d(LOGTAG, "Network configurations: " + configuredNetworks);
             if (configuredNetworks != null) {
                 for (WifiConfiguration wifiConfiguration : configuredNetworks) {
                     if (wifiConfiguration.SSID != null) {
@@ -372,14 +396,7 @@ public class CommandHandler {
             serverSocket.sendAck(commandID, ERROR_RESULT, timeoutMessage);
         }
     }
-    /**
-     * Checking the Wi-Fi state every checkingInterval time until it is changed to the
-     * expectedState or timeoutMilliseconds time elapsed
-     *
-     * @param expectedState expected Wi-Fi state
-     * @param timeoutMilliseconds timeout time
-     * @return true if expectedState is reached, false if timeout time elapsed
-     */
+
     private void wifiCheckSupplicantState(JSONObject commandObj) {
         WifiInfo wifiInfo = wifiManager.getConnectionInfo();
         SupplicantState supplicantstate = wifiInfo.getSupplicantState();

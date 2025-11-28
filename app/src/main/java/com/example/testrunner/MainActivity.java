@@ -4,9 +4,10 @@ import android.Manifest;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
-import android.content.Intent;
-import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
+import android.widget.Button;
+import android.widget.ToggleButton;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
@@ -32,14 +33,6 @@ public class MainActivity extends AppCompatActivity {
         // Enable location - required for some Wi-Fi actions
         dpm.setLocationEnabled(adminComponent, true);
 
-//        // Start foreground service to keep Wi-Fi operations alive
-//        Intent serviceIntent = new Intent(this, WifiControlService.class);
-//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-//            startForegroundService(serviceIntent);
-//        } else {
-//            startService(serviceIntent);
-//        }
-
         EdgeToEdge.enable(this);
         setContentView(com.example.testrunner.R.layout.activity_main);
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
@@ -49,6 +42,17 @@ public class MainActivity extends AppCompatActivity {
         });
         TRServerSocket serverSocket = new TRServerSocket(PORT, getApplicationContext());
         serverSocket.start();
+
+        //TODO zaimplementować zmianę stanu przycisków gdy wifi jest włączane/połączone z siecią - interfejs?
+        ToggleButton wifiIndicator = findViewById(R.id.wifiToggle);
+        ToggleButton wifiStateIndicator = findViewById(R.id.wifiStatusToggle);
+//        Button button = findViewById(R.id.button);
+//        button.setOnClickListener(new View.OnClickListener() {
+//                                      public void onClick(View v) {
+//                                          //DO SOMETHING! {RUN SOME FUNCTION ... DO CHECKS... ETC}
+//                                      }
+//                                  });
+
 
 //        DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
 //        ComponentName adminComponent = new ComponentName(this, MyDeviceAdminReceiver.class);
